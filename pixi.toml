@@ -1,0 +1,34 @@
+[workspace]
+name = "pixi-pfx"
+channels = ["https://prefix.dev/conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+preview = ["pixi-build"]
+
+[package]
+name = "pixi-pfx"
+version = "0.1.0"
+
+[package.build]
+backend = { name = "pixi-build-rust", version = "0.4.*" }
+
+[package.host-dependencies]
+
+[package.run-dependencies]
+
+[dev]
+pixi-pfx = { path = "." }
+
+[dependencies]
+
+[tasks]
+# Fetch latest schema from live API via introspection (requires network)
+sync-schema = "cargo install cynic-cli && cynic introspect https://prefix.dev/api/graphql -o schema.graphql"
+
+# Build & test via cargo (dev workflow)
+build = "cargo build --release"
+build-debug = "cargo build"
+test = "cargo test"
+test-online = "cargo test --features online-tests"
+
+# Generate agent-readable command docs
+generate-docs = { cmd = "cargo run -- describe > COMMANDS.json", depends-on = ["build-debug"] }

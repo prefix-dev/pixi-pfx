@@ -1,0 +1,2 @@
+[schema.prefix_dev]
+path = "schema.graphql"

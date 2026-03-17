@@ -1,0 +1,1404 @@
+"""
+A channel affected by tier limits.
+"""
+type AffectedChannel {
+  id: Int!
+  name: String!
+  ownerName: String
+  sizeBytes: Int!
+  memberCount: Int!
+  """
+  Whether this channel exceeds the storage limit.
+  """
+  overStorage: Boolean!
+  """
+  Whether this channel exceeds the member limit.
+  """
+  overMembers: Boolean!
+}
+
+"""
+An owner affected by tier limits.
+"""
+type AffectedOwner {
+  ownerId: Int!
+  ownerName: String
+  """
+  Number of channels this owner has that exceed limits.
+  """
+  affectedChannelCount: Int!
+  """
+  Total storage across all the owner's channels.
+  """
+  totalStorageBytes: Int!
+}
+
+"""
+Summary statistics for all channels.
+"""
+type AnalyticsSummary {
+  totalChannels: Int!
+  totalOwners: Int!
+  totalStorageBytes: Int!
+  totalMembers: Int!
+  totalPackages: Int!
+  totalDownloadsLast30Days: Int!
+  totalDownloadsAllTime: Int!
+}
+
+type ApiKeyResult {
+  """
+  The real key (password) - only returned once upon creation
+  """
+  key: String
+  """
+  The name of the api key (has to be unique)
+  """
+  name: String!
+  """
+  The description of the api key
+  """
+  description: String
+  """
+  The date and time when the api key was created.
+  """
+  createdAt: DateTime!
+  """
+  The date and time when the api key expires.
+  """
+  expiresAt: DateTime
+  """
+  The date and time when the api key was last used.
+  """
+  lastUsedAt: DateTime
+  """
+  The date and time when the api key was revoked, if at all.
+  """
+  revokedAt: DateTime
+}
+
+type Attestation {
+  url: String!
+  createdAt: DateTime
+  sha256: String!
+  certificateMetadata: FulcioCertificate
+  inTotoStatement: InTotoStatement
+  tlogEntries: [TlogEntry!]
+}
+
+type AttestationPageResult {
+  """
+  The items on this page
+  """
+  page: [Attestation!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+type Channel {
+  """
+  The name of the channel. Channel names are always unique.
+  """
+  name: String!
+  """
+  Whether the channel is public or not.
+  """
+  isPublic: Boolean!
+  """
+  The description of the channel.
+  """
+  description: String
+  """
+  The logo of the channel.
+  """
+  logo: String
+  """
+  The date when the object was created.
+  """
+  createdAt: DateTime!
+  """
+  The date when the object was last updated.
+  """
+  updatedAt: DateTime!
+  """
+  The base url from where packages are downloaded.
+  """
+  baseUrl: String!
+  owner: String
+  """
+  The mirror of the channel. If any.
+  """
+  mirror: ChannelMirror
+  """
+  Packages present in the channel.
+  """
+  packages(filters: PackageFilter, orderBy: PackageOrderBy, limit: Int, page: Int): PackagePageResult!
+  """
+  Channel Members
+  """
+  channelMembers: [ChannelMember!]!
+  """
+  Channel OIDC Publishers
+  """
+  oidcPublishers: [Publisher!]!
+  """
+  The size of all packages in the channel in bytes.
+  """
+  size: Int!
+  """
+  External channel names that must be present alongside this channel (e.g. ["conda-forge"] for bioconda).
+  """
+  requiredChannels: [String!]!
+  """
+  Retrieve the total download count of packages for this channel
+  """
+  totalCount: [TopDownloadCountObject!]!
+  """
+  Retrieve the monthly download count for this channel
+  """
+  monthlyCount: [MonthlyDownloadCountObject!]!
+}
+
+type ChannelAnalytics {
+  """
+  Summary statistics for all channels.
+  """
+  summary: AnalyticsSummary!
+  """
+  Distribution of channels by storage size.
+  """
+  storageDistribution: [DistributionBucket!]!
+  """
+  Distribution of channels by member count.
+  """
+  memberDistribution: [DistributionBucket!]!
+  """
+  Distribution of channels per owner.
+  """
+  channelsPerOwnerDistribution: [DistributionBucket!]!
+  """
+  Distribution of channels by package count.
+  """
+  packageCountDistribution: [DistributionBucket!]!
+  """
+  Distribution of channels by download count (last 30 days).
+  """
+  downloadDistribution: [DistributionBucket!]!
+  """
+  Distribution of channels by age.
+  """
+  ageDistribution: [DistributionBucket!]!
+  """
+  Breakdown by public vs private channels.
+  """
+  visibilityBreakdown: VisibilityBreakdown!
+  """
+  Top channels by storage size.
+  """
+  topChannelsByStorage(limit: Int! = 20): [ChannelStats!]!
+  """
+  Top channels by download count.
+  """
+  topChannelsByDownloads(limit: Int! = 20): [ChannelStats!]!
+  """
+  Top owners by total storage with pagination.
+  """
+  topOwnersByTotalStorage(
+    """
+    Items per page (max 100)
+    """
+    limit: Int! = 20
+    """
+    Page number (0-indexed)
+    """
+    page: Int! = 0
+  ): OwnerStatsPageResult!
+  """
+  Analyze impact of applying specific tier thresholds.
+  NOT cached - has dynamic user-provided parameters.
+  """
+  impactAnalysis(
+    """
+    Storage threshold in bytes
+    """
+    storageThresholdBytes: Int
+    """
+    Member count threshold
+    """
+    memberThreshold: Int
+  ): ImpactAnalysis!
+}
+
+"""
+Filters for channel look up
+"""
+input ChannelFilter {
+  or: [ChannelFilter!]
+  and: [ChannelFilter!]
+  name: StringFilter
+  owner: StringFilter
+  isPublic: Boolean
+  hasOwner: Boolean
+  hasMirror: Boolean
+}
+
+enum ChannelManageAccess {
+  """
+  Global admin — can manage any channel
+  """
+  ADMIN
+  """
+  Channel role with management permissions (Owner or Contributor)
+  """
+  CHANNEL_ROLE
+  """
+  No management access
+  """
+  NONE
+}
+
+type ChannelMember {
+  """
+  The username of the channel member.
+  """
+  username: String!
+  """
+  The channel_name of the channel member.
+  """
+  channelName: String!
+  """
+  The type of role the channel member has.
+  """
+  role: ChannelMemberRole!
+  """
+  Whether this member is the owner of the channel.
+  """
+  isOwner: Boolean!
+}
+
+enum ChannelMemberRole {
+  OWNER
+  CONTRIBUTOR
+  VIEWER
+  MEMBER @deprecated(reason: "Use VIEWER instead")
+}
+
+type ChannelMirror {
+  """
+  The url of the mirrored channel.
+  """
+  url: String!
+}
+
+"""
+Ordering options for channels
+"""
+input ChannelOrderBy @oneOf {
+  byField: ChannelOrderByField
+  bySimilarity: ChannelOrderBySimilarity
+}
+
+input ChannelOrderByField {
+  direction: OrderDirection! = ASC
+  field: ChannelOrderByFieldField!
+}
+
+"""
+Properties by which channel connections can be ordered.
+"""
+enum ChannelOrderByFieldField {
+  NAME
+  SIZE
+  CREATED_AT
+  PACKAGE_COUNT
+}
+
+"""
+Ordering options for channels connections
+"""
+input ChannelOrderBySimilarity {
+  direction: OrderDirection! = DESC
+  field: ChannelOrderBySimilarityField!
+  matches: String!
+}
+
+"""
+Properties by which channel connections can be ordered.
+"""
+enum ChannelOrderBySimilarityField {
+  NAME
+}
+
+type ChannelPageResult {
+  """
+  The items on this page
+  """
+  page: [Channel!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+type ChannelResult {
+  """
+  The name of the channel
+  """
+  name: String!
+  """
+  The description of the channel
+  """
+  description: String
+  """
+  The date and time when the channel was created.
+  """
+  createdAt: DateTime!
+  """
+  The date and time when the channel was last updated.
+  """
+  updatedAt: DateTime!
+  """
+  Whether the channel is public or not
+  """
+  isPublic: Boolean!
+  """
+  External channel names required alongside this channel
+  """
+  requiredChannels: [String!]!
+}
+
+"""
+Statistics for a single channel.
+"""
+type ChannelStats {
+  id: Int!
+  name: String!
+  ownerName: String
+  sizeBytes: Int!
+  memberCount: Int!
+  packageCount: Int!
+  downloadsLast30Days: Int!
+  downloadsAllTime: Int!
+  isPublic: Boolean!
+  createdAt: DateTime!
+}
+
+"""
+Implement the DateTime<Utc> scalar
+
+The input/output is a string in RFC3339 format.
+"""
+scalar DateTime
+
+"""
+A bucket in a distribution histogram.
+"""
+type DistributionBucket {
+  label: String!
+  lowerBound: Int
+  upperBound: Int
+  count: Int!
+  percentage: Float!
+  totalValue: Int
+}
+
+"""
+Aggregate download counts by the specified fields.
+"""
+enum DownloadCountAggregate {
+  PLATFORM
+  DATE
+  PYTHON
+  VERSION
+}
+
+type DownloadCountObject {
+  date: NaiveDate!
+  count: Int!
+  version: String!
+  python: String
+  platform: String
+}
+
+type Environment {
+  """
+  The name of the environment
+  """
+  name: String!
+  """
+  The name of the environment
+  """
+  summary: String!
+  """
+  The owner of the environment
+  """
+  owner: Owner!
+  """
+  The url to download the conda lock file from
+  """
+  condaLockUrl: String
+  """
+  All the versions of the environment
+  """
+  versions(limit: Int, page: Int): EnvironmentVersionPageResult!
+}
+
+type EnvironmentPageResult {
+  """
+  The items on this page
+  """
+  page: [Environment!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+input EnvironmentRequest {
+  channels: [String!]!
+  dependencies: [String!]!
+}
+
+"""
+Represents the specific version of an environment. Different versions can exist for the same
+environment name. And represent different versions of the same environment.
+"""
+type EnvironmentVersion {
+  """
+  The datetime this version was created
+  """
+  createdAt: DateTime!
+  """
+  List of channels that are used as a lookup for the packages
+  """
+  channels: [String!]!
+  """
+  List of platforms to create this version of the environment
+  """
+  platforms: [String!]!
+  """
+  Specs for solved package, these are the packages you want to have
+  included in your environment
+  """
+  specs: [String!]!
+  """
+  The globally unique identifier for this environment version. This can be used to reference
+  this specific environment version.
+  """
+  id: String!
+  """
+  The datetime the solved environment was created
+  """
+  solvedAt: DateTime
+  """
+  The url to download the conda lock file from
+  """
+  condaLockUrl: String
+  """
+  Potential errors encountered when resolving the environment
+  """
+  solveError: String
+  """
+  The environment to which this version belongs
+  """
+  environment: Environment!
+}
+
+type EnvironmentVersionPageResult {
+  """
+  The items on this page
+  """
+  page: [EnvironmentVersion!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+type FulcioCertificate {
+  subject: String
+  issuer: String
+  notBefore: DateTime
+  notAfter: DateTime
+  serial: String
+  fulcioExtensions: FulcioExtensionsType
+}
+
+type FulcioExtensionsType {
+  issuer: String
+  buildSignerUri: String
+  buildSignerDigest: String
+  runnerEnvironment: String
+  sourceRepositoryUri: String
+  sourceRepositoryDigest: String
+  sourceRepositoryRef: String
+  sourceRepositoryIdentifier: String
+  sourceRepositoryOwnerUri: String
+  sourceRepositoryOwnerIdentifier: String
+  buildConfigUri: String
+  buildConfigDigest: String
+  buildTrigger: String
+  runInvocationUri: String
+  sourceRepositoryVisibilityAtSigning: String
+}
+
+type GithubPublisher implements Publisher {
+  id: String!
+  """
+  When the OIDC publisher was created
+  """
+  createdAt: DateTime!
+  """
+  When the OIDC publisher was last updated
+  """
+  updatedAt: DateTime!
+  """
+  The name of the repository that is allowed to publish using this publisher
+  """
+  repositoryName: String!
+  """
+  The owner of the repository that is allowed to publish using this publisher
+  """
+  repositoryOwner: String!
+  """
+  The name of the workflow file that is allowed to publish using this publisher
+  """
+  workflowFilename: String!
+  """
+  The environment that is allowed to publish using this publisher
+  """
+  environment: String!
+}
+
+type GitlabPublisher implements Publisher {
+  id: String!
+  """
+  When the OIDC publisher was created
+  """
+  createdAt: DateTime!
+  """
+  When the OIDC publisher was last updated
+  """
+  updatedAt: DateTime!
+  """
+  The namespace (group or user) of the GitLab project
+  """
+  namespace: String!
+  """
+  The project name
+  """
+  project: String!
+  """
+  The workflow filepath in the repository
+  """
+  workflowFilepath: String!
+  """
+  The environment that is allowed to publish using this publisher
+  """
+  environment: String!
+}
+
+type GooglePublisher implements Publisher {
+  id: String!
+  """
+  When the OIDC publisher was created
+  """
+  createdAt: DateTime!
+  """
+  When the OIDC publisher was last updated
+  """
+  updatedAt: DateTime!
+  """
+  The email of the Google service account
+  """
+  email: String!
+  """
+  Optional subject constraint
+  """
+  sub: String!
+}
+
+type GroupedMonthlyCount {
+  platformName: String
+  packageId: Int!
+  version: String
+  totalCount: Int!
+  bucket: NaiveDate
+}
+
+"""
+Impact analysis for tier thresholds.
+"""
+type ImpactAnalysis {
+  channelsOverStorageLimit: Int!
+  channelsOverMemberLimit: Int!
+  channelsOverBothLimits: Int!
+  ownersAffectedByStorage: Int!
+  ownersAffectedByMembers: Int!
+  percentChannelsAffected: Float!
+  percentOwnersAffected: Float!
+  """
+  List of channels that exceed limits (up to 50).
+  """
+  affectedChannels: [AffectedChannel!]!
+  """
+  List of owners that have channels exceeding limits (up to 50).
+  """
+  affectedOwners: [AffectedOwner!]!
+}
+
+type InTotoDigest {
+  sha256: String
+}
+
+type InTotoStatement {
+  subject: [InTotoSubject!]!
+  predicateType: String
+  predicate: JSON
+}
+
+type InTotoSubject {
+  name: String
+  digest: InTotoDigest
+}
+
+"""
+A scalar that can represent any JSON value.
+"""
+scalar JSON
+
+"""
+Aggregate monthly download counts by the specified fields.
+Main difference to `DownloadCountAggregate` is that we don't have `Python`
+aggregation.
+"""
+enum MonthlyDownloadCountAggregate {
+  PLATFORM
+  DATE
+  VERSION
+}
+
+type MonthlyDownloadCountObject {
+  bucket: NaiveDate!
+  totalCount: Int!
+  channelId: Int!
+}
+
+type Mutation {
+  """
+  Create a new environment for the current user.
+  """
+  createEnvironment(name: String, summary: String! = "", platforms: [String!]!, request: SolveEnvironment!): EnvironmentVersion!
+  """
+  Updates an environment
+  """
+  updateEnvironment(owner: String!, name: String!, summary: String): Environment!
+  """
+  Creates a new environment version for an existing environment
+  """
+  createEnvironmentVersion(owner: String!, name: String!, platforms: [String!]!, request: SolveEnvironment!): EnvironmentVersion!
+  """
+  Create a new API Key for the current user.
+  """
+  createApiKey(
+    """
+    The name for the api key
+    """
+    name: String!
+    """
+    The description for the api key
+    """
+    description: String
+    """
+    The date and time when the api key expires (default: 30 days)
+    """
+    expiresAt: DateTime
+  ): ApiKeyResult!
+  """
+  Revoke an api key for the current user.
+  The api key must be owned by the current user.
+  Once revoked, the key can no longer be used for authentication.
+  """
+  revokeApiKey(
+    """
+    The name of the api key
+    """
+    name: String!
+  ): Boolean!
+  """
+  Delete an api key for the current user.
+  The api key must be owned by the current user.
+  """
+  deleteApiKey(
+    """
+    The name of the api key
+    """
+    name: String!
+  ): Boolean!
+  """
+  Create a new channel for the current user.
+  """
+  createChannel(name: String!, description: String, isPublic: Boolean, logo: String): ChannelResult!
+  """
+  Update a channel
+  """
+  updateChannel(
+    name: String!
+    description: String
+    isPublic: Boolean
+    logo: String
+    requiredChannels: [String!]
+  ): ChannelResult!
+  """
+  Delete channel from the database
+  """
+  deleteChannel(name: String!): ChannelResult!
+  """
+  Add a channel_member
+  """
+  addChannelMember(userName: String!, channelName: String!, role: ChannelMemberRole!): ChannelMember!
+  """
+  delete a channel_member
+  """
+  deleteChannelMember(userName: String!, channelName: String!): ChannelMember!
+  """
+  Add a Github OIDC publisher to a channel
+  """
+  addGithubOidcPublisher(
+    channelName: String!
+    repositoryOwner: String!
+    repositoryName: String!
+    workflowFilename: String!
+    environment: String
+  ): GithubPublisher!
+  """
+  Add a GitLab OIDC publisher to a channel
+  """
+  addGitlabOidcPublisher(
+    channelName: String!
+    namespace: String!
+    project: String!
+    workflowFilepath: String!
+    environment: String
+  ): GitlabPublisher!
+  """
+  Add a Google OIDC publisher to a channel
+  """
+  addGoogleOidcPublisher(channelName: String!, email: String!, sub: String): GooglePublisher!
+  """
+  Delete an OIDC publisher by ID
+  """
+  deleteOidcPublisher(channelName: String!, id: String!): OidcPublisher!
+  """
+  Yank a package variant from a channel.
+  This marks a specific build (platform/subdir variant) as yanked, not the entire package.
+  """
+  yankPackageVariant(channelName: String!, subdir: String!, filename: String!, reason: String!): Boolean!
+  """
+  Unyank a package variant from a channel.
+  This clears the yanked status of a specific build (platform/subdir variant).
+  """
+  unyankPackageVariant(channelName: String!, subdir: String!, filename: String!): Boolean!
+  """
+  Transfer ownership of a channel to another user.
+  The new owner must already exist in the system.
+  If the new owner is already a member, their membership is upgraded to Owner.
+  The previous owner is demoted to Contributor.
+  Cannot be used on mirrored channels.
+  Admins can transfer any channel; regular users must be the channel owner.
+  """
+  transferChannelOwnership(channelName: String!, newOwnerUsername: String!): ChannelResult!
+  """
+  Delete multiple package variants from a channel in a single
+  transaction. Reindex workflows are triggered once per unique
+  subdir after all entries are removed.
+  """
+  batchDeletePackageVariants(channelName: String!, entries: [PackageVariantInput!]!): Boolean!
+}
+
+"""
+ISO 8601 calendar date without timezone.
+Format: %Y-%m-%d
+
+# Examples
+
+* `1994-11-13`
+* `2000-02-24`
+"""
+scalar NaiveDate
+
+type OidcPublisher {
+  id: String!
+  """
+  When the OIDC publisher was created
+  """
+  createdAt: DateTime!
+  """
+  When the OIDC publisher was last updated
+  """
+  updatedAt: DateTime!
+}
+
+"""
+Order direction
+"""
+enum OrderDirection {
+  ASC
+  DESC
+}
+
+interface Owner {
+  login: String!
+}
+
+"""
+Statistics for a single owner.
+"""
+type OwnerStats {
+  ownerId: Int!
+  ownerName: String
+  channelCount: Int!
+  totalStorageBytes: Int!
+  totalMembers: Int!
+  totalPackages: Int!
+}
+
+"""
+Paginated result for owner statistics.
+"""
+type OwnerStatsPageResult {
+  page: [OwnerStats!]!
+  current: Int!
+  pages: Int!
+  totalCount: Int!
+}
+
+type Package {
+  """
+  The channel in which the package resides
+  """
+  channel: Channel!
+  """
+  The display name of the package.
+  """
+  name: String!
+  """
+  The summary description of the package
+  """
+  summary: String
+  """
+  The description of the package
+  """
+  description: String
+  """
+  The latest date the an entry of the latest version was created
+  """
+  lastCreatedDate: DateTime
+  """
+  retrieve unique versions for which download counts are available
+  """
+  downloadCountVersions: [String!]
+  """
+  Retrieve download counts for given package
+  This information is obtained through the anaconda data
+  """
+  downloadCounts(aggregateBy: [DownloadCountAggregate!], versions: [String!]): [DownloadCountObject!]
+  """
+  The version object for the latest version of this package
+  """
+  latestVersion: PackageVersion!
+  """
+  The similarity score when using similarity-based search.
+  Higher values indicate higher similarity (1.0 = exact match, approaching 0.0 = no similarity).
+  Only present when the query uses similarity ordering.
+  """
+  similarityScore: Float
+  """
+  All the variants of the package
+  """
+  variants(limit: Int, page: Int, version: String, platform: String): PackageVariantPageResult!
+  """
+  All the versions of the package.
+  """
+  versions(limit: Int, page: Int): PackageVersionPageResult!
+  """
+  All the platforms for which this package has entries
+  """
+  platforms: [String!]!
+  """
+  The urls associated with the package
+  """
+  urls: [Url!]!
+  """
+  Retrieve monthly download counts for given package
+  This data is calculated from the prefix.dev telemetry
+  """
+  monthlyCount(
+    versions: [String!]
+    startDate: NaiveDate
+    endDate: NaiveDate
+    aggregateBy: [MonthlyDownloadCountAggregate!]
+  ): [GroupedMonthlyCount!]!
+  """
+  Retrieve what versions are available for monthly download counts
+  """
+  monthlyVersions: [String!]!
+  """
+  Retrieve total count for given package
+  """
+  totalCount: Int
+  """
+  Returns true if all variants of the latest version are verified (have attestations)
+  """
+  latestVersionVerified: Boolean!
+}
+
+"""
+Filters for channel look up
+"""
+input PackageFilter {
+  or: [PackageFilter!]
+  and: [PackageFilter!]
+  name: StringFilter
+}
+
+input PackageOrderBy @oneOf {
+  byField: PackageOrderByField
+  bySimilarity: PackageOrderBySimilarity
+}
+
+"""
+Ordering options for channels connections
+"""
+input PackageOrderByField {
+  direction: OrderDirection! = ASC
+  field: PackageOrderByFieldField!
+}
+
+"""
+Properties by which channel connections can be ordered.
+"""
+enum PackageOrderByFieldField {
+  NAME
+  LAST_CREATED_DATE
+}
+
+"""
+Ordering options for channels connections
+"""
+input PackageOrderBySimilarity {
+  direction: OrderDirection! = DESC
+  field: PackageOrderBySimilarityField!
+  matches: String!
+}
+
+"""
+Properties by which channel connections can be ordered.
+"""
+enum PackageOrderBySimilarityField {
+  NAME
+}
+
+type PackagePageResult {
+  """
+  The items on this page
+  """
+  page: [Package!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+type PackageVariant {
+  filename: String!
+  buildString: String!
+  buildNumber: Int!
+  description: String
+  summary: String
+  license: String
+  licenseFamily: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  version: String!
+  platform: String!
+  rawIndex: JSON!
+  rawAbout: JSON
+  rawRunExports: JSON
+  size: Int
+  md5: String
+  sha256: String
+  yankedReason: String
+  repoDataPatches: JSON
+  attestations(limit: Int, page: Int): AttestationPageResult!
+  """
+  URL to fetch all attestations for this package variant as a JSON array.
+  Returns the URL to the `.v0.sigs` endpoint (e.g., `{channel}/{platform}/{filename}.v0.sigs`).
+  """
+  attestationsUrl: String!
+  """
+  The urls associated with the variant
+  """
+  urls: [Url!]!
+  """
+  Total downloads for this package entry
+  """
+  totalDownloads: Int
+  """
+  The paths associated with the package entry
+  """
+  paths: [String!]
+}
+
+input PackageVariantInput {
+  subdir: String!
+  filename: String!
+}
+
+type PackageVariantPageResult {
+  """
+  The items on this page
+  """
+  page: [PackageVariant!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+type PackageVersion {
+  """
+  The version string
+  """
+  version: String!
+  """
+  The platforms for this specific version
+  """
+  platforms: [String!]!
+  """
+  The urls associated with the version
+  """
+  urls: [Url!]!
+  """
+  Retrieve the total download count for this version
+  """
+  totalCount: Int
+}
+
+type PackageVersionPageResult {
+  """
+  The items on this page
+  """
+  page: [PackageVersion!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+interface Publisher {
+  id: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+"""
+The query root of Prefix.dev's GraphQL interface.
+"""
+type Query {
+  """
+  Look up all channels
+  """
+  channels(filters: ChannelFilter, orderBy: ChannelOrderBy, limit: Int, page: Int): ChannelPageResult!
+  """
+  Look up a channel by name
+  """
+  channel(name: String!): Channel
+  """
+  Returns the distinct owner usernames of all channels the current user can see.
+  """
+  channelOwners: [String!]!
+  """
+  Check if the current user can manage a channel, and why.
+  """
+  channelManageAccess(channelName: String!): ChannelManageAccess!
+  """
+  Look up all packages
+
+  When using similarity-based ordering, results are automatically prioritized
+  by channel size to surface packages from larger, more established channels.
+  """
+  packages(filters: PackageFilter, orderBy: PackageOrderBy, limit: Int, page: Int): PackagePageResult!
+  """
+  Look up a package by name
+  """
+  package(channelName: String!, name: String!): Package
+  """
+  Find the package that best matches the specified query
+  """
+  packageByMatchspec(matchSpec: String!, channels: [String!]!): Package
+  """
+  Look up a variant by its unique properties
+  """
+  variant(channelName: String!, packageName: String!, platformName: String!, fileName: String!): PackageVariant
+  """
+  Look up a variant by it's paths
+  """
+  paths(pattern: String!): PackageVariant
+  """
+  The currently authenticated user.
+  """
+  viewer: User
+  """
+  Get all known users
+  """
+  users(filters: UserFilter, orderBy: UserOrderBy, limit: Int, page: Int): UserPageResult!
+  """
+  Look up an environment by owner and name
+  """
+  environment(owner: String!, name: String!): Environment
+  """
+  Look up an environment version by its id.
+  """
+  environmentVersion(id: String!): EnvironmentVersion
+  """
+  Get all api keys for the current user.
+  """
+  apiKeys: [ApiKeyResult!]!
+  """
+  Get comprehensive channel analytics for tiering decisions.
+  Admin-only endpoint.
+  """
+  channelAnalytics: ChannelAnalytics!
+}
+
+"""
+Different forms of descriptions of an environment.
+"""
+input SolveEnvironment @oneOf {
+  """
+  Upload a file containing an environment description.
+  """
+  file: Upload
+  """
+  A link pointing to a file containing an environment description
+  """
+  link: String
+  """
+  A yaml encoded Conda environment description
+  """
+  yaml: String
+  """
+  Explicit environment description
+  """
+  env: EnvironmentRequest
+}
+
+"""
+Provides filtering methods for a string.
+"""
+input StringFilter {
+  eq: String
+  ne: String
+  isIn: [String!]
+  isNotIn: [String!]
+  startsWith: String
+  endsWith: String
+  contains: String
+}
+
+type TlogEntry {
+  integratedTime: String
+  logIndex: String
+}
+
+type TopDownloadCountObject {
+  name: String!
+  channelId: Int!
+  totalCount: Int!
+}
+
+"""
+A multipart file upload
+"""
+scalar Upload
+
+type Url {
+  """
+  The URL
+  """
+  url: String!
+  """
+  The type of URL
+  """
+  kind: UrlKind!
+  """
+  The rank of this URL relative to the others of the same kind
+  """
+  order: Int!
+}
+
+enum UrlKind {
+  DEV
+  DOC
+  HOME
+  SOURCE
+  FEEDSTOCK
+}
+
+type User implements Owner {
+  """
+  The publicly visible username of the user
+  """
+  login: String!
+  """
+  Returns all the environments owned by a user
+  """
+  environments(limit: Int, page: Int): EnvironmentPageResult!
+  channels(
+    filters: ChannelFilter
+    orderBy: ChannelOrderBy
+    roles: [ChannelMemberRole!]
+    limit: Int
+    page: Int
+  ): ChannelPageResult!
+}
+
+input UserFilter {
+  or: [UserFilter!]
+  and: [UserFilter!]
+  login: StringFilter
+  isAdmin: Boolean
+}
+
+input UserOrderBy @oneOf {
+  byField: UserOrderByField
+  bySimilarity: UserOrderBySimilarity
+}
+
+input UserOrderByField {
+  direction: OrderDirection! = ASC
+  field: UserOrderByFieldField!
+}
+
+"""
+Properties by which channel connections can be ordered.
+"""
+enum UserOrderByFieldField {
+  LOGIN
+  IS_ADMIN
+}
+
+"""
+Ordering options for channels connections
+"""
+input UserOrderBySimilarity {
+  direction: OrderDirection! = DESC
+  field: UserOrderBySimilarityField!
+  matches: String!
+}
+
+enum UserOrderBySimilarityField {
+  LOGIN
+}
+
+type UserPageResult {
+  """
+  The items on this page
+  """
+  page: [User!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+"""
+Breakdown by visibility (public vs private).
+"""
+type VisibilityBreakdown {
+  public: VisibilityStats!
+  private: VisibilityStats!
+}
+
+"""
+Statistics for a visibility category.
+"""
+type VisibilityStats {
+  channelCount: Int!
+  totalStorageBytes: Int!
+  avgStorageBytes: Float!
+  totalDownloads: Int!
+}
+
+"""
+Indicates that an Input Object is a OneOf Input Object (and thus requires exactly one of its field be provided)
+"""
+directive @oneOf on INPUT_OBJECT
+
