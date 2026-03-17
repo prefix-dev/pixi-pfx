@@ -15,6 +15,10 @@ pub struct Cli {
     )]
     pub endpoint: String,
 
+    /// Output as JSON (default: human-readable table output)
+    #[arg(long, global = true)]
+    pub json: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
