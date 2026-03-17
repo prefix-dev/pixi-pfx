@@ -22,6 +22,8 @@ pixi run install
 To use as a global installation use:
 
 ```bash
+# from git
+pixi global install --git https://github.com/tdejager/pixi-pfx.git
 # With the repository checked out locally
 pixi global install  --path .
 ```
