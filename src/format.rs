@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tabwriter::TabWriter;
 
 use crate::error::{ErrorResponse, PfxError};
@@ -15,6 +15,7 @@ pub enum OutputKind {
     ChannelList,
     ChannelResult { action: &'static str },
     ChannelMember { action: &'static str },
+    ChannelNotice,
     GithubPublisher,
     GitlabPublisher,
     GooglePublisher,
@@ -24,6 +25,7 @@ pub enum OutputKind {
     PackageInfo,
     VariantDetail,
     PackageVersions,
+    BackgroundJob,
 }
 
 pub struct CommandOutput {
@@ -86,6 +88,7 @@ pub fn format_human(output: &CommandOutput) -> String {
         OutputKind::ChannelList => format_channel_list(&output.value),
         OutputKind::ChannelResult { action } => format_channel_result(&output.value, action),
         OutputKind::ChannelMember { action } => format_channel_member(&output.value, action),
+        OutputKind::ChannelNotice => format_channel_notice(&output.value),
         OutputKind::GithubPublisher => format_github_publisher(&output.value),
         OutputKind::GitlabPublisher => format_gitlab_publisher(&output.value),
         OutputKind::GooglePublisher => format_google_publisher(&output.value),
@@ -95,6 +98,7 @@ pub fn format_human(output: &CommandOutput) -> String {
         OutputKind::PackageInfo => format_package_info(&output.value),
         OutputKind::VariantDetail => format_variant_detail(&output.value),
         OutputKind::PackageVersions => format_package_versions(&output.value),
+        OutputKind::BackgroundJob => format_background_job(&output.value),
     }
 }
 
@@ -137,10 +141,7 @@ fn table(header: &[&str], rows: &[Vec<String>]) -> String {
 fn page_footer(v: &Value) -> String {
     let current = v.get("current").and_then(|v| v.as_i64()).unwrap_or(0);
     let pages = v.get("pages").and_then(|v| v.as_i64()).unwrap_or(0);
-    let total = v
-        .get("total_count")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let total = v.get("total_count").and_then(|v| v.as_i64()).unwrap_or(0);
     format!("Page {}/{} ({} total)\n", current + 1, pages, total)
 }
 
@@ -178,6 +179,14 @@ fn platforms_str(v: &Value) -> String {
                 .join(", ")
         })
         .unwrap_or_else(|| "-".to_string())
+}
+
+fn nested_name(v: &Value, key: &str) -> String {
+    v.get(key)
+        .and_then(|value| value.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("-")
+        .to_string()
 }
 
 fn channel_name(v: &Value) -> String {
@@ -225,7 +234,14 @@ fn format_api_key_list(v: &Value) -> String {
         })
         .collect();
     table(
-        &["NAME", "DESCRIPTION", "CREATED", "EXPIRES", "LAST USED", "REVOKED"],
+        &[
+            "NAME",
+            "DESCRIPTION",
+            "CREATED",
+            "EXPIRES",
+            "LAST USED",
+            "REVOKED",
+        ],
         &rows,
     )
 }
@@ -250,7 +266,8 @@ fn format_channel_detail(v: &Value) -> String {
     }
     let mut out = kv(&[
         ("Name", sv(v, "name")),
-        ("Owner", sv(v, "owner")),
+        ("Owner", nested_name(v, "owner")),
+        ("Namespace", nested_name(v, "namespace")),
         ("Public", yes_no(v, "is_public").to_string()),
         ("Description", sv(v, "description")),
         ("Base URL", sv(v, "base_url")),
@@ -258,10 +275,21 @@ fn format_channel_detail(v: &Value) -> String {
         ("Updated", sv(v, "updated_at")),
     ]);
 
-    if let Some(req) = v.get("required_channels").and_then(|v| v.as_array()) {
-        if !req.is_empty() {
-            let names: Vec<&str> = req.iter().filter_map(|v| v.as_str()).collect();
-            out.push_str(&format!("Required: {}\n", names.join(", ")));
+    if let Some(notices) = v.get("notices").and_then(Value::as_array) {
+        if !notices.is_empty() {
+            out.push('\n');
+            let rows = notices
+                .iter()
+                .map(|notice| {
+                    vec![
+                        sv(notice, "id"),
+                        sv(notice, "level"),
+                        sv(notice, "message"),
+                        sv(notice, "expires_at"),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            out.push_str(&table(&["NOTICE", "LEVEL", "MESSAGE", "EXPIRES"], &rows));
         }
     }
 
@@ -291,10 +319,8 @@ fn format_channel_detail(v: &Value) -> String {
     if let Some(publishers) = v.get("oidc_publishers").and_then(|v| v.as_array()) {
         if !publishers.is_empty() {
             out.push('\n');
-            let rows: Vec<Vec<String>> = publishers
-                .iter()
-                .map(|p| format_publisher_row(p))
-                .collect();
+            let rows: Vec<Vec<String>> =
+                publishers.iter().map(|p| format_publisher_row(p)).collect();
             out.push_str(&table(&["TYPE", "ID", "DETAILS"], &rows));
         }
     }
@@ -326,11 +352,7 @@ fn format_publisher_row(p: &Value) -> Vec<String> {
             ),
         ]
     } else if let Some(g) = p.get("GooglePublisher") {
-        vec![
-            "Google".to_string(),
-            sv(g, "id"),
-            sv(g, "email"),
-        ]
+        vec!["Google".to_string(), sv(g, "id"), sv(g, "email")]
     } else {
         vec!["Unknown".to_string(), "-".to_string(), "-".to_string()]
     }
@@ -347,7 +369,7 @@ fn format_channel_list(v: &Value) -> String {
         .map(|ch| {
             vec![
                 sv(ch, "name"),
-                sv(ch, "owner"),
+                nested_name(ch, "owner"),
                 yes_no(ch, "is_public").to_string(),
                 truncate(&sv(ch, "description"), 40),
             ]
@@ -367,9 +389,19 @@ fn format_channel_member(v: &Value, action: &str) -> String {
         "Member '{}' {} channel '{}' (role: {}).\n",
         sv(v, "username"),
         action,
-        sv(v, "channel_name"),
+        nested_name(v, "channel"),
         sv(v, "role"),
     )
+}
+
+fn format_channel_notice(v: &Value) -> String {
+    kv(&[
+        ("ID", sv(v, "id")),
+        ("Level", sv(v, "level")),
+        ("Message", sv(v, "message")),
+        ("Created", sv(v, "created_at")),
+        ("Expires", sv(v, "expires_at")),
+    ])
 }
 
 fn format_github_publisher(v: &Value) -> String {
@@ -408,6 +440,38 @@ fn format_google_publisher(v: &Value) -> String {
 
 fn format_oidc_deleted(v: &Value) -> String {
     format!("OIDC publisher '{}' deleted.\n", sv(v, "id"))
+}
+
+fn format_background_job(v: &Value) -> String {
+    if v.is_null() {
+        return "Background job not found.\n".to_string();
+    }
+
+    let mut out = kv(&[
+        ("ID", sv(v, "id")),
+        ("Type", sv(v, "job_type")),
+        ("Status", sv(v, "status")),
+        (
+            "Progress",
+            format!(
+                "{}/{} ({} failed)",
+                v.get("processed_count")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0),
+                v.get("total_count").and_then(Value::as_i64).unwrap_or(0),
+                v.get("failed_count").and_then(Value::as_i64).unwrap_or(0),
+            ),
+        ),
+        ("Created", sv(v, "created_at")),
+        ("Completed", sv(v, "completed_at")),
+        ("Error", sv(v, "error_message")),
+    ]);
+    if let Some(results) = v.get("results").filter(|results| !results.is_null()) {
+        out.push_str("\nResults:\n");
+        out.push_str(&serde_json::to_string_pretty(results).unwrap());
+        out.push('\n');
+    }
+    out
 }
 
 fn format_package_detail(v: &Value) -> String {
@@ -563,11 +627,7 @@ fn format_package_versions(v: &Value) -> String {
                             .and_then(|c| c.as_i64())
                             .map(|c| c.to_string())
                             .unwrap_or_else(|| "-".to_string());
-                        vec![
-                            sv(ver, "version"),
-                            truncate(&platforms_str(ver), 40),
-                            count,
-                        ]
+                        vec![sv(ver, "version"), truncate(&platforms_str(ver), 40), count]
                     })
                     .collect();
                 out.push_str(&table(&["VERSION", "PLATFORMS", "VARIANTS"], &rows));

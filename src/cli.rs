@@ -8,11 +8,7 @@ pub struct Cli {
     pub token: Option<String>,
 
     /// GraphQL endpoint URL
-    #[arg(
-        long,
-        global = true,
-        default_value = "https://prefix.dev/api/graphql"
-    )]
+    #[arg(long, global = true, default_value = "https://prefix.dev/api/graphql")]
     pub endpoint: String,
 
     /// Output as JSON (default: human-readable table output)
@@ -94,6 +90,15 @@ pub enum ChannelCommand {
         /// Channel logo URL
         #[arg(long)]
         logo: Option<String>,
+        /// CEP-0042 base channel
+        #[arg(long)]
+        relation_base: Option<String>,
+        /// CEP-0042 overrides channel
+        #[arg(long)]
+        relation_overrides: Option<String>,
+        /// Allow packages requiring v3 repodata syntax
+        #[arg(long)]
+        allow_v3_uploads: Option<bool>,
     },
     /// Update an existing channel
     Update {
@@ -108,10 +113,45 @@ pub enum ChannelCommand {
         /// Logo URL
         #[arg(long)]
         logo: Option<String>,
-        /// Required channels (comma-separated)
-        #[arg(long, value_delimiter = ',')]
-        required_channels: Option<Vec<String>>,
+        /// CEP-0042 base channel
+        #[arg(long)]
+        relation_base: Option<String>,
+        /// CEP-0042 overrides channel
+        #[arg(long)]
+        relation_overrides: Option<String>,
+        /// Allow packages requiring v3 repodata syntax
+        #[arg(long)]
+        allow_v3_uploads: Option<bool>,
     },
+    /// Publish a CEP-6 channel notice
+    AddNotice {
+        channel: String,
+        /// Stable notice identifier
+        id: String,
+        /// Notice message
+        message: String,
+        /// Notice severity
+        #[arg(long, value_enum, default_value = "info")]
+        level: NoticeLevel,
+        /// Optional expiry datetime (RFC3339)
+        #[arg(long)]
+        expires_at: Option<String>,
+    },
+    /// Update a CEP-6 channel notice
+    UpdateNotice {
+        channel: String,
+        id: String,
+        /// Updated notice message
+        message: String,
+        /// Notice severity
+        #[arg(long, value_enum, default_value = "info")]
+        level: NoticeLevel,
+        /// Optional expiry datetime (RFC3339)
+        #[arg(long)]
+        expires_at: Option<String>,
+    },
+    /// Delete a CEP-6 channel notice
+    DeleteNotice { channel: String, id: String },
     /// Delete a channel
     Delete {
         /// Channel name
@@ -294,6 +334,24 @@ pub enum PackageCommand {
         /// Package filename
         filename: String,
     },
+    /// Copy package files from URLs into a channel asynchronously
+    Copy {
+        /// Destination channel name
+        channel: String,
+        /// JSON array: [{"url":"https://...pkg.conda","sha256":"<64 hex>"}]
+        #[arg(long)]
+        packages: String,
+    },
+    /// Get copy/background job status by job ID
+    CopyStatus {
+        /// Background job ID returned by `package copy`
+        id: String,
+    },
+    /// Get the active package-copy job for a channel
+    ActiveCopy {
+        /// Destination channel name
+        channel: String,
+    },
     /// Batch delete package variants
     BatchDelete {
         /// Channel name
@@ -349,6 +407,8 @@ pub enum ApiKeyCommand {
 #[derive(Clone, Copy, ValueEnum)]
 pub enum ChannelOrderField {
     Name,
+    BillingOwner,
+    Namespace,
     Size,
     CreatedAt,
     PackageCount,
@@ -358,6 +418,7 @@ pub enum ChannelOrderField {
 pub enum PackageOrderField {
     Name,
     LastCreatedDate,
+    TotalSize,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -371,4 +432,72 @@ pub enum MemberRole {
     Owner,
     Contributor,
     Viewer,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum NoticeLevel {
+    Info,
+    Warning,
+    Critical,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_add_notice() {
+        let cli = Cli::try_parse_from([
+            "pixi-pfx",
+            "channel",
+            "add-notice",
+            "my-channel",
+            "maintenance",
+            "Planned maintenance",
+            "--level",
+            "warning",
+            "--expires-at",
+            "2026-08-20T22:00:00Z",
+        ])
+        .unwrap();
+
+        let Command::Channel {
+            command:
+                ChannelCommand::AddNotice {
+                    channel,
+                    id,
+                    message,
+                    level,
+                    expires_at,
+                },
+        } = cli.command
+        else {
+            panic!("expected add-notice command");
+        };
+
+        assert_eq!(channel, "my-channel");
+        assert_eq!(id, "maintenance");
+        assert_eq!(message, "Planned maintenance");
+        assert!(matches!(level, NoticeLevel::Warning));
+        assert_eq!(expires_at.as_deref(), Some("2026-08-20T22:00:00Z"));
+    }
+
+    #[test]
+    fn parses_delete_notice() {
+        let cli = Cli::try_parse_from([
+            "pixi-pfx",
+            "channel",
+            "delete-notice",
+            "my-channel",
+            "maintenance",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Channel {
+                command: ChannelCommand::DeleteNotice { channel, id }
+            } if channel == "my-channel" && id == "maintenance"
+        ));
+    }
 }

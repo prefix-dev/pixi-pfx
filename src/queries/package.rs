@@ -1,8 +1,8 @@
 use serde::Serialize;
 
+use super::common::*;
 #[allow(unused_imports)]
 use crate::schema;
-use super::common::*;
 
 // ── Fragments ───────────────────────────────────────────────────────────────
 
@@ -16,7 +16,10 @@ pub struct PackageVersion {
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "PackageVersionPageResult")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "PackageVersionPageResult"
+)]
 pub struct PackageVersionPage {
     pub page: Vec<PackageVersion>,
     pub current: i32,
@@ -51,7 +54,10 @@ pub struct PackageVariant {
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "PackageVariantPageResult")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "PackageVariantPageResult"
+)]
 pub struct PackageVariantPage {
     pub page: Vec<PackageVariant>,
     pub current: i32,
@@ -61,7 +67,11 @@ pub struct PackageVariantPage {
 
 /// Full package detail with variants (used by `package get`)
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Package", variables = "PackageGetVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Package",
+    variables = "PackageGetVars"
+)]
 pub struct PackageDetail {
     pub name: String,
     pub summary: Option<String>,
@@ -115,7 +125,11 @@ pub struct PackageSummaryPage {
 
 /// Package with versions list
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Package", variables = "PackageVersionsVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Package",
+    variables = "PackageVersionsVars"
+)]
 pub struct PackageWithVersions {
     pub name: String,
     pub channel: ChannelNameOnly,
@@ -134,7 +148,11 @@ pub struct PackageGetVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "PackageGetVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "PackageGetVars"
+)]
 pub struct PackageGetQuery {
     #[arguments(channelName: $channel_name, name: $name)]
     pub package: Option<PackageDetail>,
@@ -148,7 +166,11 @@ pub struct PackageSearchVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "PackageSearchVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "PackageSearchVars"
+)]
 pub struct PackageSearchQuery {
     #[arguments(orderBy: $order_by, limit: $limit, page: $page)]
     pub packages: PackageSummaryPage,
@@ -163,7 +185,11 @@ pub struct PackageListVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "PackageListVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "PackageListVars"
+)]
 pub struct PackageListQuery {
     #[arguments(filters: $filters, orderBy: $order_by, limit: $limit, page: $page)]
     pub packages: PackageSummaryPage,
@@ -176,7 +202,11 @@ pub struct PackageMatchspecVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "PackageMatchspecVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "PackageMatchspecVars"
+)]
 pub struct PackageMatchspecQuery {
     #[arguments(matchSpec: $match_spec, channels: $channels)]
     pub package_by_matchspec: Option<PackageInfo>,
@@ -191,7 +221,11 @@ pub struct VariantGetVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "VariantGetVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "VariantGetVars"
+)]
 pub struct VariantGetQuery {
     #[arguments(
         channelName: $channel_name,
@@ -211,7 +245,11 @@ pub struct PackageVersionsVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "PackageVersionsVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "PackageVersionsVars"
+)]
 pub struct PackageVersionsQuery {
     #[arguments(channelName: $channel_name, name: $name)]
     pub package: Option<PackageWithVersions>,
@@ -222,35 +260,36 @@ pub struct PackageVersionsQuery {
 #[derive(cynic::QueryVariables)]
 pub struct YankVars {
     pub channel_name: String,
-    pub subdir: String,
-    pub filename: String,
+    pub entries: Vec<PackageVariantInput>,
     pub reason: String,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "YankVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "YankVars"
+)]
 pub struct YankMutation {
-    #[arguments(
-        channelName: $channel_name,
-        subdir: $subdir,
-        filename: $filename,
-        reason: $reason,
-    )]
-    pub yank_package_variant: bool,
+    #[arguments(channelName: $channel_name, entries: $entries, reason: $reason)]
+    pub batch_yank_package_variants: bool,
 }
 
 #[derive(cynic::QueryVariables)]
 pub struct UnyankVars {
     pub channel_name: String,
-    pub subdir: String,
-    pub filename: String,
+    pub entries: Vec<PackageVariantInput>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "UnyankVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "UnyankVars"
+)]
 pub struct UnyankMutation {
-    #[arguments(channelName: $channel_name, subdir: $subdir, filename: $filename)]
-    pub unyank_package_variant: bool,
+    #[arguments(channelName: $channel_name, entries: $entries)]
+    pub batch_unyank_package_variants: bool,
 }
 
 #[derive(cynic::QueryVariables)]
@@ -260,8 +299,104 @@ pub struct BatchDeleteVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "BatchDeleteVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "BatchDeleteVars"
+)]
 pub struct BatchDeleteMutation {
     #[arguments(channelName: $channel_name, entries: $entries)]
     pub batch_delete_package_variants: bool,
+}
+
+// ── Package copies and background jobs ──────────────────────────────────────
+
+#[derive(cynic::InputObject, Debug, Clone, serde::Deserialize)]
+#[cynic(schema_path = "schema.graphql")]
+pub struct CopyPackageUrlInput {
+    pub url: String,
+    pub sha256: String,
+}
+
+#[derive(cynic::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+#[cynic(schema_path = "schema.graphql", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BackgroundJobStatus {
+    Pending,
+    InProgress,
+    Completed,
+    CompletedWithErrors,
+    Failed,
+}
+
+#[derive(cynic::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+#[cynic(schema_path = "schema.graphql", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BackgroundJobType {
+    BatchDeletePackages,
+    CopyPackagesFromUrl,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
+#[cynic(schema_path = "schema.graphql")]
+pub struct BackgroundJob {
+    pub id: String,
+    pub job_type: BackgroundJobType,
+    pub status: BackgroundJobStatus,
+    pub payload: Json,
+    pub total_count: i32,
+    pub processed_count: i32,
+    pub failed_count: i32,
+    pub error_message: Option<String>,
+    pub results: Option<Json>,
+    pub created_at: DateTime,
+    pub completed_at: Option<DateTime>,
+}
+
+#[derive(cynic::QueryVariables)]
+pub struct CopyPackagesVars {
+    pub channel_name: String,
+    pub packages: Vec<CopyPackageUrlInput>,
+}
+
+#[derive(cynic::QueryFragment, Debug, Serialize)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "CopyPackagesVars"
+)]
+pub struct CopyPackagesMutation {
+    #[arguments(channelName: $channel_name, packages: $packages)]
+    pub copy_packages_from_urls: BackgroundJob,
+}
+
+#[derive(cynic::QueryVariables)]
+pub struct BackgroundJobVars {
+    pub id: String,
+}
+
+#[derive(cynic::QueryFragment, Debug, Serialize)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "BackgroundJobVars"
+)]
+pub struct BackgroundJobQuery {
+    #[arguments(id: $id)]
+    pub background_job: Option<BackgroundJob>,
+}
+
+#[derive(cynic::QueryVariables)]
+pub struct ActiveCopyJobVars {
+    pub channel_name: String,
+    pub job_type: Option<BackgroundJobType>,
+}
+
+#[derive(cynic::QueryFragment, Debug, Serialize)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "ActiveCopyJobVars"
+)]
+pub struct ActiveCopyJobQuery {
+    #[arguments(channelName: $channel_name, jobType: $job_type)]
+    pub active_background_job: Option<BackgroundJob>,
 }

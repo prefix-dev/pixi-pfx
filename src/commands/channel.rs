@@ -1,16 +1,13 @@
 use cynic::{MutationBuilder, QueryBuilder};
 use serde_json::Value;
 
-use crate::cli::{ChannelCommand, ChannelOrderField, MemberRole, SortDirection};
+use crate::cli::{ChannelCommand, ChannelOrderField, MemberRole, NoticeLevel, SortDirection};
 use crate::client::PrefixClient;
 use crate::error::PfxError;
 use crate::queries::channel::*;
 use crate::queries::common::*;
 
-pub async fn handle(
-    client: &PrefixClient,
-    command: &ChannelCommand,
-) -> Result<Value, PfxError> {
+pub async fn handle(client: &PrefixClient, command: &ChannelCommand) -> Result<Value, PfxError> {
     match command {
         ChannelCommand::Get { name } => {
             let op = ChannelGetQuery::build(ChannelGetVars { name: name.clone() });
@@ -41,6 +38,7 @@ pub async fn handle(
                         ends_with: None,
                         contains: None,
                     }),
+                    namespace: None,
                     is_public: if *public { Some(true) } else { None },
                     has_owner: None,
                     has_mirror: None,
@@ -63,6 +61,10 @@ pub async fn handle(
                     by_field: Some(ChannelOrderByField {
                         field: match field {
                             ChannelOrderField::Name => ChannelOrderByFieldField::Name,
+                            ChannelOrderField::BillingOwner => {
+                                ChannelOrderByFieldField::BillingOwner
+                            }
+                            ChannelOrderField::Namespace => ChannelOrderByFieldField::Namespace,
                             ChannelOrderField::Size => ChannelOrderByFieldField::Size,
                             ChannelOrderField::CreatedAt => ChannelOrderByFieldField::CreatedAt,
                             ChannelOrderField::PackageCount => {
@@ -93,15 +95,21 @@ pub async fn handle(
             description,
             public,
             logo,
+            relation_base,
+            relation_overrides,
+            allow_v3_uploads,
         } => {
             let op = CreateChannelMutation::build(CreateChannelVars {
                 name: name.clone(),
                 description: description.clone(),
                 is_public: Some(*public),
                 logo: logo.clone(),
+                channel_relation_base: relation_base.clone(),
+                channel_relation_overrides: relation_overrides.clone(),
+                allow_v3_uploads: *allow_v3_uploads,
             });
             let data = client.execute(op).await?;
-            Ok(serde_json::to_value(data.create_channel)?)
+            Ok(serde_json::to_value(data.create_channel.channel)?)
         }
 
         ChannelCommand::Update {
@@ -109,23 +117,72 @@ pub async fn handle(
             description,
             public,
             logo,
-            required_channels,
+            relation_base,
+            relation_overrides,
+            allow_v3_uploads,
         } => {
             let op = UpdateChannelMutation::build(UpdateChannelVars {
                 name: name.clone(),
                 description: description.clone(),
                 is_public: *public,
                 logo: logo.clone(),
-                required_channels: required_channels.clone(),
+                channel_relation_base: relation_base.clone(),
+                channel_relation_overrides: relation_overrides.clone(),
+                allow_v3_uploads: *allow_v3_uploads,
             });
             let data = client.execute(op).await?;
-            Ok(serde_json::to_value(data.update_channel)?)
+            Ok(serde_json::to_value(data.update_channel.channel)?)
+        }
+
+        ChannelCommand::AddNotice {
+            channel,
+            id,
+            message,
+            level,
+            expires_at,
+        } => {
+            let op = CreateChannelNoticeMutation::build(UpsertChannelNoticeVars {
+                channel_name: channel.clone(),
+                id: id.clone(),
+                message: message.clone(),
+                level: notice_level(*level),
+                expires_at: expires_at.clone().map(DateTime),
+            });
+            let data = client.execute(op).await?;
+            Ok(serde_json::to_value(data.create_channel_notice)?)
+        }
+
+        ChannelCommand::UpdateNotice {
+            channel,
+            id,
+            message,
+            level,
+            expires_at,
+        } => {
+            let op = UpdateChannelNoticeMutation::build(UpsertChannelNoticeVars {
+                channel_name: channel.clone(),
+                id: id.clone(),
+                message: message.clone(),
+                level: notice_level(*level),
+                expires_at: expires_at.clone().map(DateTime),
+            });
+            let data = client.execute(op).await?;
+            Ok(serde_json::to_value(data.update_channel_notice)?)
+        }
+
+        ChannelCommand::DeleteNotice { channel, id } => {
+            let op = DeleteChannelNoticeMutation::build(DeleteChannelNoticeVars {
+                channel_name: channel.clone(),
+                id: id.clone(),
+            });
+            let data = client.execute(op).await?;
+            Ok(serde_json::to_value(data.delete_channel_notice)?)
         }
 
         ChannelCommand::Delete { name } => {
             let op = DeleteChannelMutation::build(DeleteChannelVars { name: name.clone() });
             let data = client.execute(op).await?;
-            Ok(serde_json::to_value(data.delete_channel)?)
+            Ok(serde_json::to_value(data.delete_channel.channel)?)
         }
 
         ChannelCommand::AddMember {
@@ -214,16 +271,23 @@ pub async fn handle(
             Ok(serde_json::to_value(data.delete_oidc_publisher)?)
         }
 
-        ChannelCommand::Transfer {
-            channel,
-            new_owner,
-        } => {
+        ChannelCommand::Transfer { channel, new_owner } => {
             let op = TransferChannelMutation::build(TransferChannelVars {
                 channel_name: channel.clone(),
                 new_owner_username: new_owner.clone(),
             });
             let data = client.execute(op).await?;
-            Ok(serde_json::to_value(data.transfer_channel_ownership)?)
+            Ok(serde_json::to_value(
+                data.transfer_channel_ownership.channel,
+            )?)
         }
+    }
+}
+
+fn notice_level(level: NoticeLevel) -> ChannelNoticeLevel {
+    match level {
+        NoticeLevel::Info => ChannelNoticeLevel::Info,
+        NoticeLevel::Warning => ChannelNoticeLevel::Warning,
+        NoticeLevel::Critical => ChannelNoticeLevel::Critical,
     }
 }

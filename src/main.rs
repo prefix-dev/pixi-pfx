@@ -80,18 +80,18 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
             let kind = match command {
                 ChannelCommand::Get { .. } => OutputKind::ChannelDetail,
                 ChannelCommand::List { .. } => OutputKind::ChannelList,
-                ChannelCommand::Create { .. } => OutputKind::ChannelResult {
-                    action: "created",
+                ChannelCommand::Create { .. } => OutputKind::ChannelResult { action: "created" },
+                ChannelCommand::Update { .. } => OutputKind::ChannelResult { action: "updated" },
+                ChannelCommand::AddNotice { .. } | ChannelCommand::UpdateNotice { .. } => {
+                    OutputKind::ChannelNotice
+                }
+                ChannelCommand::DeleteNotice { .. } => OutputKind::BoolResult {
+                    action: "Channel notice deleted.",
                 },
-                ChannelCommand::Update { .. } => OutputKind::ChannelResult {
-                    action: "updated",
-                },
-                ChannelCommand::Delete { .. } => OutputKind::ChannelResult {
-                    action: "deleted",
-                },
-                ChannelCommand::AddMember { .. } => OutputKind::ChannelMember {
-                    action: "added to",
-                },
+                ChannelCommand::Delete { .. } => OutputKind::ChannelResult { action: "deleted" },
+                ChannelCommand::AddMember { .. } => {
+                    OutputKind::ChannelMember { action: "added to" }
+                }
                 ChannelCommand::RemoveMember { .. } => OutputKind::ChannelMember {
                     action: "removed from",
                 },
@@ -122,6 +122,9 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
                 PackageCommand::Unyank { .. } => OutputKind::BoolResult {
                     action: "Package variant unyanked.",
                 },
+                PackageCommand::Copy { .. }
+                | PackageCommand::CopyStatus { .. }
+                | PackageCommand::ActiveCopy { .. } => OutputKind::BackgroundJob,
                 PackageCommand::BatchDelete { .. } => OutputKind::BoolResult {
                     action: "Package variants deleted.",
                 },

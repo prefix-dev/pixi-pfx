@@ -1,8 +1,8 @@
 use serde::Serialize;
 
+use super::common::*;
 #[allow(unused_imports)]
 use crate::schema;
-use super::common::*;
 
 // ── Channel Fragments ───────────────────────────────────────────────────────
 
@@ -10,15 +10,21 @@ use super::common::*;
 #[cynic(schema_path = "schema.graphql", graphql_type = "Channel")]
 pub struct ChannelDetail {
     pub name: String,
+    pub channel_path: String,
+    pub namespace: OwnerName,
+    pub is_primary: bool,
     pub is_public: bool,
     pub description: Option<String>,
     pub logo: Option<String>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub base_url: String,
-    pub owner: Option<String>,
-    pub required_channels: Vec<String>,
+    pub owner: Option<OwnerName>,
     pub mirror: Option<ChannelMirror>,
+    pub notices: Vec<ChannelNotice>,
+    pub channel_relation_base: Option<ChannelNameOnly>,
+    pub channel_relation_overrides: Option<ChannelNameOnly>,
+    pub allow_v3_uploads: bool,
     pub channel_members: Vec<ChannelMemberInfo>,
     pub oidc_publishers: Vec<PublisherFragment>,
 }
@@ -27,9 +33,11 @@ pub struct ChannelDetail {
 #[cynic(schema_path = "schema.graphql", graphql_type = "Channel")]
 pub struct ChannelSummary {
     pub name: String,
+    pub channel_path: String,
+    pub namespace: OwnerName,
     pub is_public: bool,
     pub description: Option<String>,
-    pub owner: Option<String>,
+    pub owner: Option<OwnerName>,
     pub created_at: DateTime,
     pub base_url: String,
 }
@@ -44,23 +52,48 @@ pub struct ChannelPage {
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
-#[cynic(schema_path = "schema.graphql")]
-pub struct ChannelResult {
+#[cynic(schema_path = "schema.graphql", graphql_type = "Channel")]
+pub struct ChannelMutationResult {
     pub name: String,
+    pub channel_path: String,
     pub description: Option<String>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub is_public: bool,
-    pub required_channels: Vec<String>,
+    pub allow_v3_uploads: bool,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
+#[cynic(schema_path = "schema.graphql")]
+pub struct ChannelResult {
+    pub channel: ChannelMutationResult,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
 #[cynic(schema_path = "schema.graphql")]
 pub struct ChannelMember {
     pub username: String,
-    pub channel_name: String,
+    pub channel: ChannelNameOnly,
     pub role: ChannelMemberRole,
     pub is_owner: bool,
+}
+
+#[derive(cynic::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+#[cynic(schema_path = "schema.graphql", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ChannelNoticeLevel {
+    Info,
+    Warning,
+    Critical,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
+#[cynic(schema_path = "schema.graphql")]
+pub struct ChannelNotice {
+    pub id: String,
+    pub message: String,
+    pub level: ChannelNoticeLevel,
+    pub created_at: Option<DateTime>,
+    pub expires_at: Option<DateTime>,
 }
 
 // ── Publisher Fragments (interface) ─────────────────────────────────────────
@@ -133,7 +166,11 @@ pub struct ChannelGetVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "ChannelGetVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "ChannelGetVars"
+)]
 pub struct ChannelGetQuery {
     #[arguments(name: $name)]
     pub channel: Option<ChannelDetail>,
@@ -148,7 +185,11 @@ pub struct ChannelListVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Query", variables = "ChannelListVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "ChannelListVars"
+)]
 pub struct ChannelListQuery {
     #[arguments(filters: $filters, orderBy: $order_by, limit: $limit, page: $page)]
     pub channels: ChannelPage,
@@ -162,12 +203,27 @@ pub struct CreateChannelVars {
     pub description: Option<String>,
     pub is_public: Option<bool>,
     pub logo: Option<String>,
+    pub channel_relation_base: Option<String>,
+    pub channel_relation_overrides: Option<String>,
+    pub allow_v3_uploads: Option<bool>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "CreateChannelVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "CreateChannelVars"
+)]
 pub struct CreateChannelMutation {
-    #[arguments(name: $name, description: $description, isPublic: $is_public, logo: $logo)]
+    #[arguments(
+        name: $name,
+        description: $description,
+        isPublic: $is_public,
+        logo: $logo,
+        channelRelationBase: $channel_relation_base,
+        channelRelationOverrides: $channel_relation_overrides,
+        allowV3Uploads: $allow_v3_uploads,
+    )]
     pub create_channel: ChannelResult,
 }
 
@@ -177,18 +233,26 @@ pub struct UpdateChannelVars {
     pub description: Option<String>,
     pub is_public: Option<bool>,
     pub logo: Option<String>,
-    pub required_channels: Option<Vec<String>>,
+    pub channel_relation_base: Option<String>,
+    pub channel_relation_overrides: Option<String>,
+    pub allow_v3_uploads: Option<bool>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "UpdateChannelVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "UpdateChannelVars"
+)]
 pub struct UpdateChannelMutation {
     #[arguments(
         name: $name,
         description: $description,
         isPublic: $is_public,
         logo: $logo,
-        requiredChannels: $required_channels,
+        channelRelationBase: $channel_relation_base,
+        channelRelationOverrides: $channel_relation_overrides,
+        allowV3Uploads: $allow_v3_uploads,
     )]
     pub update_channel: ChannelResult,
 }
@@ -199,7 +263,11 @@ pub struct DeleteChannelVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "DeleteChannelVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "DeleteChannelVars"
+)]
 pub struct DeleteChannelMutation {
     #[arguments(name: $name)]
     pub delete_channel: ChannelResult,
@@ -213,7 +281,11 @@ pub struct AddChannelMemberVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "AddChannelMemberVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "AddChannelMemberVars"
+)]
 pub struct AddChannelMemberMutation {
     #[arguments(userName: $user_name, channelName: $channel_name, role: $role)]
     pub add_channel_member: ChannelMember,
@@ -226,7 +298,11 @@ pub struct DeleteChannelMemberVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "DeleteChannelMemberVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "DeleteChannelMemberVars"
+)]
 pub struct DeleteChannelMemberMutation {
     #[arguments(userName: $user_name, channelName: $channel_name)]
     pub delete_channel_member: ChannelMember,
@@ -242,7 +318,11 @@ pub struct AddGithubOidcVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "AddGithubOidcVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "AddGithubOidcVars"
+)]
 pub struct AddGithubOidcMutation {
     #[arguments(
         channelName: $channel_name,
@@ -264,7 +344,11 @@ pub struct AddGitlabOidcVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "AddGitlabOidcVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "AddGitlabOidcVars"
+)]
 pub struct AddGitlabOidcMutation {
     #[arguments(
         channelName: $channel_name,
@@ -284,7 +368,11 @@ pub struct AddGoogleOidcVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "AddGoogleOidcVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "AddGoogleOidcVars"
+)]
 pub struct AddGoogleOidcMutation {
     #[arguments(channelName: $channel_name, email: $email, sub: $sub)]
     pub add_google_oidc_publisher: GooglePublisherDetail,
@@ -297,7 +385,11 @@ pub struct DeleteOidcVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "DeleteOidcVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "DeleteOidcVars"
+)]
 pub struct DeleteOidcMutation {
     #[arguments(channelName: $channel_name, id: $id)]
     pub delete_oidc_publisher: OidcPublisher,
@@ -310,8 +402,60 @@ pub struct TransferChannelVars {
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
-#[cynic(schema_path = "schema.graphql", graphql_type = "Mutation", variables = "TransferChannelVars")]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "TransferChannelVars"
+)]
 pub struct TransferChannelMutation {
     #[arguments(channelName: $channel_name, newOwnerUsername: $new_owner_username)]
     pub transfer_channel_ownership: ChannelResult,
+}
+
+#[derive(cynic::QueryVariables)]
+pub struct UpsertChannelNoticeVars {
+    pub channel_name: String,
+    pub id: String,
+    pub message: String,
+    pub level: ChannelNoticeLevel,
+    pub expires_at: Option<DateTime>,
+}
+
+#[derive(cynic::QueryFragment, Debug, Serialize)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "UpsertChannelNoticeVars"
+)]
+pub struct CreateChannelNoticeMutation {
+    #[arguments(channelName: $channel_name, id: $id, message: $message, level: $level, expiresAt: $expires_at)]
+    pub create_channel_notice: ChannelNotice,
+}
+
+#[derive(cynic::QueryFragment, Debug, Serialize)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "UpsertChannelNoticeVars"
+)]
+pub struct UpdateChannelNoticeMutation {
+    #[arguments(channelName: $channel_name, id: $id, message: $message, level: $level, expiresAt: $expires_at)]
+    pub update_channel_notice: ChannelNotice,
+}
+
+#[derive(cynic::QueryVariables)]
+pub struct DeleteChannelNoticeVars {
+    pub channel_name: String,
+    pub id: String,
+}
+
+#[derive(cynic::QueryFragment, Debug, Serialize)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Mutation",
+    variables = "DeleteChannelNoticeVars"
+)]
+pub struct DeleteChannelNoticeMutation {
+    #[arguments(channelName: $channel_name, id: $id)]
+    pub delete_channel_notice: bool,
 }

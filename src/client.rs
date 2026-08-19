@@ -1,4 +1,5 @@
 use cynic::GraphQlResponse;
+use rattler_networking::{Authentication, AuthenticationStorage};
 use serde::Serialize;
 
 use crate::error::PfxError;
@@ -10,6 +11,7 @@ pub struct PrefixClient {
     http: reqwest::Client,
     endpoint: String,
     token: Option<String>,
+    auth_storage: Result<AuthenticationStorage, String>,
 }
 
 impl PrefixClient {
@@ -18,6 +20,8 @@ impl PrefixClient {
             http: reqwest::Client::new(),
             endpoint,
             token,
+            auth_storage: AuthenticationStorage::from_env_and_defaults()
+                .map_err(|error| error.to_string()),
         }
     }
 
@@ -29,16 +33,46 @@ impl PrefixClient {
         ResponseData: serde::de::DeserializeOwned,
         Vars: Serialize,
     {
-        let mut req = self.http.post(&self.endpoint).json(&operation);
+        let mut endpoint = self.endpoint.clone();
+        let stored_auth = if self.token.is_none() {
+            let storage = self
+                .auth_storage
+                .as_ref()
+                .map_err(|error| PfxError::AuthStorage(error.clone()))?;
+            let (resolved_url, auth) = storage
+                .get_by_url_refreshed(&endpoint)
+                .await
+                .map_err(|error| PfxError::AuthStorage(error.to_string()))?;
+            endpoint = resolved_url.to_string();
+            auth
+        } else {
+            None
+        };
 
+        let mut req = self.http.post(endpoint).json(&operation);
         if let Some(token) = &self.token {
-            req = req.header("Authorization", format!("Bearer {token}"));
+            req = req.bearer_auth(token);
+        } else if let Some(auth) = stored_auth {
+            req = match auth {
+                Authentication::BearerToken(token)
+                | Authentication::OAuth {
+                    access_token: token,
+                    ..
+                } => req.bearer_auth(token),
+                Authentication::BasicHTTP { username, password } => {
+                    req.basic_auth(username, Some(password))
+                }
+                // Conda tokens are already inserted into the resolved URL by
+                // AuthenticationStorage. Other credential types do not apply
+                // to the HTTP GraphQL endpoint.
+                Authentication::CondaToken(_) | Authentication::S3Credentials { .. } => req,
+            };
         }
 
         let resp = req.send().await?;
         let text = resp.text().await?;
-        let gql_resp: GraphQlResponse<ResponseData> = serde_json::from_str(&text)
-            .map_err(|e| PfxError::Graphql {
+        let gql_resp: GraphQlResponse<ResponseData> =
+            serde_json::from_str(&text).map_err(|e| PfxError::Graphql {
                 message: format!("Failed to decode response: {e}"),
                 details: Some(serde_json::json!({ "body_preview": &text[..text.len().min(500)] })),
             })?;

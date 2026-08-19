@@ -6,12 +6,13 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }
 cynic = "3"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 thiserror = "2"
 tabwriter = "1.4.1"
+rattler_networking = { version = "0.30.5", default-features = false, features = ["rustls", "system-integration"] }
 
 [dev-dependencies]
 cynic-introspection = "3"

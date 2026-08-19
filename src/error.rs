@@ -15,6 +15,9 @@ pub enum PfxError {
     #[allow(dead_code)]
     AuthRequired,
 
+    #[error("Authentication storage error: {0}")]
+    AuthStorage(String),
+
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
 
@@ -28,6 +31,7 @@ impl PfxError {
             PfxError::Http(_) => "HTTP_ERROR",
             PfxError::Graphql { .. } => "GRAPHQL_ERROR",
             PfxError::AuthRequired => "AUTH_REQUIRED",
+            PfxError::AuthStorage(_) => "AUTH_STORAGE_ERROR",
             PfxError::InvalidArgument(_) => "INVALID_ARGUMENT",
             PfxError::Json(_) => "JSON_ERROR",
         }

@@ -2,9 +2,6 @@
 A channel affected by tier limits.
 """
 type AffectedChannel {
-  id: Int!
-  name: String!
-  ownerName: String
   sizeBytes: Int!
   memberCount: Int!
   """
@@ -15,6 +12,7 @@ type AffectedChannel {
   Whether this channel exceeds the member limit.
   """
   overMembers: Boolean!
+  channel: Channel!
 }
 
 """
@@ -24,13 +22,37 @@ type AffectedOwner {
   ownerId: Int!
   ownerName: String
   """
-  Number of channels this owner has that exceed limits.
+  Number of channels this owner has that exceed per-channel limits.
   """
   affectedChannelCount: Int!
   """
   Total storage across all the owner's channels.
   """
   totalStorageBytes: Int!
+  """
+  Total number of channels this owner has.
+  """
+  totalChannelCount: Int!
+  """
+  Number of public channels this owner has.
+  """
+  publicChannelCount: Int!
+  """
+  Number of private channels this owner has.
+  """
+  privateChannelCount: Int!
+  """
+  Whether this owner exceeds the total channel limit.
+  """
+  overChannelLimit: Boolean!
+  """
+  Whether this owner exceeds the public channel limit.
+  """
+  overPublicChannelLimit: Boolean!
+  """
+  Whether this owner exceeds the private channel limit.
+  """
+  overPrivateChannelLimit: Boolean!
 }
 
 """
@@ -75,6 +97,14 @@ type ApiKeyResult {
   The date and time when the api key was revoked, if at all.
   """
   revokedAt: DateTime
+  """
+  The access mode granted by this api key.
+  """
+  accessMode: ChannelAccessMode!
+  """
+  The channel this api key is scoped to, if any.
+  """
+  channel: Channel
 }
 
 type Attestation {
@@ -105,11 +135,78 @@ type AttestationPageResult {
   totalCount: Int!
 }
 
+type BackgroundJob {
+  id: String!
+  jobType: BackgroundJobType!
+  status: BackgroundJobStatus!
+  payload: JSON!
+  totalCount: Int!
+  processedCount: Int!
+  failedCount: Int!
+  errorMessage: String
+  """
+  Machine-readable per-item results, written once when the job
+  finishes. For package copies this is a JSON array of
+  `{url, status, message?}` objects.
+  """
+  results: JSON
+  createdAt: DateTime!
+  completedAt: DateTime
+}
+
+"""
+Status of a background job.
+"""
+enum BackgroundJobStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  """
+  Finished, but some items failed while others succeeded. Per-item
+  details are available in `results`.
+  """
+  COMPLETED_WITH_ERRORS
+  FAILED
+}
+
+"""
+Type of a background job.
+"""
+enum BackgroundJobType {
+  BATCH_DELETE_PACKAGES
+  COPY_PACKAGES_FROM_URL
+}
+
+"""
+Billing interval type for GraphQL
+"""
+enum BillingIntervalType {
+  MONTHLY
+  ANNUAL
+}
+
+"""
+Billing period type for GraphQL
+"""
+enum BillingPeriodType {
+  MONTHLY
+  ANNUAL
+}
+
 type Channel {
   """
-  The name of the channel. Channel names are always unique.
+  The local name of the channel within its namespace.
   """
   name: String!
+  """
+  The canonical root-relative path for this channel.
+  """
+  channelPath: String!
+  """
+  The namespace that defines this channel's public identity.
+  """
+  namespace: Owner!
+  isPrimary: Boolean!
   """
   Whether the channel is public or not.
   """
@@ -134,15 +231,37 @@ type Channel {
   The base url from where packages are downloaded.
   """
   baseUrl: String!
-  owner: String
+  """
+  The account billed for this channel, which may be a group the reader
+  has nothing to do with.
+
+  Unlike `namespace`, billing implies no relationship: a public channel in
+  someone's own namespace can be billed to a private group, and reading
+  that channel says nothing about being allowed to see the group. So a
+  private group the caller cannot read is withheld entirely rather than
+  returned with its fields emptied.
+  """
+  owner: Owner
   """
   The mirror of the channel. If any.
   """
   mirror: ChannelMirror
   """
+  CEP-6 notices published by this channel.
+  """
+  notices: [ChannelNotice!]!
+  """
   Packages present in the channel.
   """
   packages(filters: PackageFilter, orderBy: PackageOrderBy, limit: Int, page: Int): PackagePageResult!
+  """
+  Quarantines applied to packages in this channel. Admin-only.
+  Returns active quarantines by default; pass
+  `filter: { includeRevoked: true }` to also see historical
+  entries. Filter by `packageName` / `action` via the same
+  `QuarantineFilter` input.
+  """
+  quarantines(filter: QuarantineFilter, limit: Int, page: Int): QuarantinePageResult!
   """
   Channel Members
   """
@@ -156,9 +275,20 @@ type Channel {
   """
   size: Int!
   """
-  External channel names that must be present alongside this channel (e.g. ["conda-forge"] for bioconda).
+  CEP-0042 `base` related channel: another channel hosted on this server
+  that takes precedence over this one during dependency resolution.
   """
-  requiredChannels: [String!]!
+  channelRelationBase: Channel
+  """
+  CEP-0042 `overrides` related channel: another channel hosted on this
+  server that this channel takes precedence over during dependency
+  resolution.
+  """
+  channelRelationOverrides: Channel
+  """
+  Whether this channel accepts packages that require v3 repodata syntax.
+  """
+  allowV3Uploads: Boolean!
   """
   Retrieve the total download count of packages for this channel
   """
@@ -167,6 +297,31 @@ type Channel {
   Retrieve the monthly download count for this channel
   """
   monthlyCount: [MonthlyDownloadCountObject!]!
+  """
+  Retrieve the daily channel size history.
+  Returns the total size of the channel at the end of each day.
+  Use `days` to limit how far back to look (default: 30, max: 90).
+  """
+  dailySizeHistory(days: Int! = 90): [DailyChannelSizePoint!]!
+}
+
+enum ChannelAccessMode {
+  """
+  Full legacy API-key access. Only used for unscoped user API keys.
+  """
+  ALL
+  """
+  Read channel metadata and packages.
+  """
+  READ
+  """
+  Read packages, upload packages, and yank/unyank package variants.
+  """
+  READ_WRITE
+  """
+  Read, upload, yank/unyank, and delete package variants.
+  """
+  READ_WRITE_DELETE
 }
 
 type ChannelAnalytics {
@@ -224,6 +379,19 @@ type ChannelAnalytics {
     page: Int! = 0
   ): OwnerStatsPageResult!
   """
+  Top owners by channel count with pagination.
+  """
+  topOwnersByChannelCount(
+    """
+    Items per page (max 100)
+    """
+    limit: Int! = 20
+    """
+    Page number (0-indexed)
+    """
+    page: Int! = 0
+  ): OwnerStatsPageResult!
+  """
   Analyze impact of applying specific tier thresholds.
   NOT cached - has dynamic user-provided parameters.
   """
@@ -236,6 +404,18 @@ type ChannelAnalytics {
     Member count threshold
     """
     memberThreshold: Int
+    """
+    Max total channels per owner
+    """
+    channelLimit: Int
+    """
+    Max public channels per owner
+    """
+    publicChannelLimit: Int
+    """
+    Max private channels per owner
+    """
+    privateChannelLimit: Int
   ): ImpactAnalysis!
 }
 
@@ -247,9 +427,24 @@ input ChannelFilter {
   and: [ChannelFilter!]
   name: StringFilter
   owner: StringFilter
+  """
+  Filter by the namespace that defines the channels' public identity.
+  """
+  namespace: StringFilter
   isPublic: Boolean
   hasOwner: Boolean
   hasMirror: Boolean
+}
+
+enum ChannelLifecycleAccess {
+  """
+  The current user can perform lifecycle operations such as delete/transfer.
+  """
+  AUTHORIZED
+  """
+  The current user cannot perform lifecycle operations.
+  """
+  NONE
 }
 
 enum ChannelManageAccess {
@@ -258,7 +453,7 @@ enum ChannelManageAccess {
   """
   ADMIN
   """
-  Channel role with management permissions (Owner or Contributor)
+  Channel-scoped management access (direct or inherited)
   """
   CHANNEL_ROLE
   """
@@ -273,9 +468,9 @@ type ChannelMember {
   """
   username: String!
   """
-  The channel_name of the channel member.
+  The channel this membership belongs to.
   """
-  channelName: String!
+  channel: Channel!
   """
   The type of role the channel member has.
   """
@@ -300,6 +495,20 @@ type ChannelMirror {
   url: String!
 }
 
+type ChannelNotice {
+  id: String!
+  message: String!
+  level: ChannelNoticeLevel!
+  createdAt: DateTime
+  expiresAt: DateTime
+}
+
+enum ChannelNoticeLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
 """
 Ordering options for channels
 """
@@ -318,6 +527,8 @@ Properties by which channel connections can be ordered.
 """
 enum ChannelOrderByFieldField {
   NAME
+  BILLING_OWNER
+  NAMESPACE
   SIZE
   CREATED_AT
   PACKAGE_COUNT
@@ -360,45 +571,49 @@ type ChannelPageResult {
 
 type ChannelResult {
   """
-  The name of the channel
+  The channel affected by the mutation.
   """
-  name: String!
-  """
-  The description of the channel
-  """
-  description: String
-  """
-  The date and time when the channel was created.
-  """
-  createdAt: DateTime!
-  """
-  The date and time when the channel was last updated.
-  """
-  updatedAt: DateTime!
-  """
-  Whether the channel is public or not
-  """
-  isPublic: Boolean!
-  """
-  External channel names required alongside this channel
-  """
-  requiredChannels: [String!]!
+  channel: Channel!
 }
 
 """
 Statistics for a single channel.
 """
 type ChannelStats {
-  id: Int!
-  name: String!
-  ownerName: String
   sizeBytes: Int!
   memberCount: Int!
   packageCount: Int!
   downloadsLast30Days: Int!
   downloadsAllTime: Int!
-  isPublic: Boolean!
-  createdAt: DateTime!
+  channel: Channel!
+}
+
+"""
+One package-file URL to copy into a channel.
+"""
+input CopyPackageUrlInput {
+  """
+  Complete HTTP(S) URL of a package file: `.../<subdir>/<filename>`.
+  """
+  url: String!
+  """
+  SHA-256 of the package file's content, as 64 hex characters.
+  """
+  sha256: String!
+}
+
+"""
+A single point in a channel's daily size history.
+"""
+type DailyChannelSizePoint {
+  """
+  The day bucket for this measurement.
+  """
+  bucket: DateTime!
+  """
+  The total size of the channel in bytes at the end of this day.
+  """
+  totalSize: Int!
 }
 
 """
@@ -436,6 +651,22 @@ type DownloadCountObject {
   version: String!
   python: String
   platform: String
+}
+
+"""
+A pool user available for e2e testing.
+"""
+type E2ePoolUser {
+  id: Int!
+  username: String!
+  email: String!
+  password: String!
+  isAdmin: Boolean!
+  """
+  Whether this user is currently locked by a test worker.
+  """
+  locked: Boolean!
+  channel: Channel!
 }
 
 type Environment {
@@ -602,6 +833,10 @@ type GithubPublisher implements Publisher {
   The environment that is allowed to publish using this publisher
   """
   environment: String!
+  """
+  The channel access granted to this publisher
+  """
+  accessMode: ChannelAccessMode!
 }
 
 type GitlabPublisher implements Publisher {
@@ -630,6 +865,10 @@ type GitlabPublisher implements Publisher {
   The environment that is allowed to publish using this publisher
   """
   environment: String!
+  """
+  The channel access granted to this publisher
+  """
+  accessMode: ChannelAccessMode!
 }
 
 type GooglePublisher implements Publisher {
@@ -650,6 +889,47 @@ type GooglePublisher implements Publisher {
   Optional subject constraint
   """
   sub: String!
+  """
+  The channel access granted to this publisher
+  """
+  accessMode: ChannelAccessMode!
+}
+
+type Group implements Owner {
+  """
+  Unique group name used to identify the group.
+  """
+  name: String!
+  """
+  Human-readable group display name.
+  """
+  displayName: String
+  """
+  Group description.
+  """
+  description: String
+  """
+  Whether the group is discoverable and readable by non-members.
+  """
+  isPublic: Boolean!
+  """
+  Date when the group was created.
+  """
+  createdAt: DateTime!
+  """
+  Date when the group was last updated.
+  """
+  updatedAt: DateTime!
+  """
+  Whether the current subject holds a role in this group. Public groups
+  are readable by everyone, so this is what group-internal surfaces such
+  as the settings pages key off.
+  """
+  viewerIsMember: Boolean!
+  """
+  Whether the current credential may update group metadata.
+  """
+  canUpdateMetadata: Boolean!
 }
 
 type GroupedMonthlyCount {
@@ -669,6 +949,9 @@ type ImpactAnalysis {
   channelsOverBothLimits: Int!
   ownersAffectedByStorage: Int!
   ownersAffectedByMembers: Int!
+  ownersAffectedByChannelLimit: Int!
+  ownersAffectedByPublicChannelLimit: Int!
+  ownersAffectedByPrivateChannelLimit: Int!
   percentChannelsAffected: Float!
   percentOwnersAffected: Float!
   """
@@ -697,9 +980,49 @@ type InTotoSubject {
 }
 
 """
+The runtime feature configuration of this instance.
+"""
+type InstanceConfig {
+  """
+  Whether paid channels (billing) are enabled.
+  """
+  paidChannelsEnabled: Boolean!
+  """
+  Whether the e2e-test endpoints are enabled.
+  """
+  e2eEnabled: Boolean!
+}
+
+"""
 A scalar that can represent any JSON value.
 """
 scalar JSON
+
+"""
+Type of resource being limited
+"""
+enum LimitEntityType {
+  STORAGE
+  CHANNELS
+  MEMBERS
+  PACKAGE_SIZE
+  BILLED_GROUPS
+  GROUP_MEMBERS
+}
+
+"""
+A required quota key a plan is missing an explicit quota row for.
+"""
+type MissingQuotaKey {
+  """
+  The type of resource the missing quota limits
+  """
+  limitEntity: LimitEntityType!
+  """
+  Optional scope qualifier of the missing quota
+  """
+  scope: VisibilityType
+}
 
 """
 Aggregate monthly download counts by the specified fields.
@@ -715,7 +1038,6 @@ enum MonthlyDownloadCountAggregate {
 type MonthlyDownloadCountObject {
   bucket: NaiveDate!
   totalCount: Int!
-  channelId: Int!
 }
 
 type Mutation {
@@ -747,6 +1069,14 @@ type Mutation {
     The date and time when the api key expires (default: 30 days)
     """
     expiresAt: DateTime
+    """
+    The access mode granted by the api key
+    """
+    accessMode: ChannelAccessMode
+    """
+    The channel this api key is scoped to
+    """
+    channelName: String
   ): ApiKeyResult!
   """
   Revoke an api key for the current user.
@@ -772,7 +1102,39 @@ type Mutation {
   """
   Create a new channel for the current user.
   """
-  createChannel(name: String!, description: String, isPublic: Boolean, logo: String): ChannelResult!
+  createChannel(
+    name: String!
+    description: String
+    isPublic: Boolean
+    logo: String
+    channelRelationBase: String
+    channelRelationOverrides: String
+    allowV3Uploads: Boolean
+  ): ChannelResult!
+  """
+  Publish a CEP-6 notice for a channel.
+  """
+  createChannelNotice(
+    channelName: String!
+    id: String!
+    message: String!
+    level: ChannelNoticeLevel!
+    expiresAt: DateTime
+  ): ChannelNotice!
+  """
+  Update a CEP-6 notice for a channel.
+  """
+  updateChannelNotice(
+    channelName: String!
+    id: String!
+    message: String!
+    level: ChannelNoticeLevel!
+    expiresAt: DateTime
+  ): ChannelNotice!
+  """
+  Delete a CEP-6 notice from a channel.
+  """
+  deleteChannelNotice(channelName: String!, id: String!): Boolean!
   """
   Update a channel
   """
@@ -781,7 +1143,9 @@ type Mutation {
     description: String
     isPublic: Boolean
     logo: String
-    requiredChannels: [String!]
+    channelRelationBase: String
+    channelRelationOverrides: String
+    allowV3Uploads: Boolean
   ): ChannelResult!
   """
   Delete channel from the database
@@ -804,6 +1168,7 @@ type Mutation {
     repositoryName: String!
     workflowFilename: String!
     environment: String
+    accessMode: ChannelAccessMode
   ): GithubPublisher!
   """
   Add a GitLab OIDC publisher to a channel
@@ -814,25 +1179,82 @@ type Mutation {
     project: String!
     workflowFilepath: String!
     environment: String
+    accessMode: ChannelAccessMode
   ): GitlabPublisher!
   """
   Add a Google OIDC publisher to a channel
   """
-  addGoogleOidcPublisher(channelName: String!, email: String!, sub: String): GooglePublisher!
+  addGoogleOidcPublisher(channelName: String!, email: String!, sub: String, accessMode: ChannelAccessMode): GooglePublisher!
   """
   Delete an OIDC publisher by ID
   """
   deleteOidcPublisher(channelName: String!, id: String!): OidcPublisher!
   """
-  Yank a package variant from a channel.
-  This marks a specific build (platform/subdir variant) as yanked, not the entire package.
+  Copy package files into an existing channel from complete package
+  URLs. Every URL must point at a single package file and carry a
+  SHA-256 pin of the expected content. The copy always runs
+  asynchronously: the returned background job tracks per-file progress
+  and records machine-readable per-file results when it finishes. URLs
+  that point at a channel hosted on this server are verified and
+  read-authorized up front and copied without downloading (package
+  blobs are content-addressed); all other URLs are downloaded and
+  verified against the pin by the background worker.
   """
-  yankPackageVariant(channelName: String!, subdir: String!, filename: String!, reason: String!): Boolean!
+  copyPackagesFromUrls(channelName: String!, packages: [CopyPackageUrlInput!]!): BackgroundJob!
   """
-  Unyank a package variant from a channel.
-  This clears the yanked status of a specific build (platform/subdir variant).
+  Yank multiple package variants from a channel in a single
+  transaction. Reindex workflows are triggered once per unique
+  subdir after all entries are updated.
   """
-  unyankPackageVariant(channelName: String!, subdir: String!, filename: String!): Boolean!
+  batchYankPackageVariants(channelName: String!, entries: [PackageVariantInput!]!, reason: String!, alsoHide: Boolean): Boolean!
+  """
+  Unyank multiple package variants from a channel in a single
+  transaction. Reindex workflows are triggered once per unique
+  subdir after all entries are updated.
+  """
+  batchUnyankPackageVariants(channelName: String!, entries: [PackageVariantInput!]!, alsoUnhide: Boolean): Boolean!
+  """
+  Apply a package quarantine to a channel. Server admins only.
+
+  A quarantine records an action (`yank` or `delete`) that applies to
+  every `package_entry` matched by the selector. `yank` routes the
+  entry through repodata's `removed` section (download still works);
+  `delete` omits the entry from repodata/shards and returns 410 on
+  direct download. Both are reversible via `revokeQuarantine`.
+
+  Selectors: a variant list (one or more filenames, all resolving to
+  the same package), a time range on `package_entry.created_at`, or a
+  conda matchspec. All are optionally scoped to a subdir.
+  """
+  applyQuarantine(
+    channelName: String!
+    action: QuarantineAction!
+    selector: QuarantineSelector!
+    reason: String!
+    metadata: JSON
+    allowEmpty: Boolean! = false
+    dryRun: Boolean! = false
+    dryRunOptions: QuarantineDryRunOptions
+  ): QuarantineResult!
+  """
+  Revoke an active quarantine by id. Clears the M:N memberships for
+  that quarantine and recomputes `is_download_blocked` / `yanked_reason`
+  on the affected `package_entry` rows from the remaining active
+  quarantines. Server admins only.
+  """
+  revokeQuarantine(quarantineId: Int!): Quarantine!
+  """
+  Narrow the scope of an active quarantine. Updateable fields:
+  `createdAtStart`, `createdAtEnd`, `matchspec`. Re-evaluates M:N
+  memberships, releasing entries that no longer match and adding
+  entries that newly match. Server admins only.
+  """
+  updateQuarantine(
+    quarantineId: Int!
+    input: UpdateQuarantineInput!
+    dryRun: Boolean! = false
+    dryRunOptions: QuarantineDryRunOptions
+  ): UpdateQuarantineResult!
   """
   Transfer ownership of a channel to another user.
   The new owner must already exist in the system.
@@ -841,13 +1263,74 @@ type Mutation {
   Cannot be used on mirrored channels.
   Admins can transfer any channel; regular users must be the channel owner.
   """
-  transferChannelOwnership(channelName: String!, newOwnerUsername: String!): ChannelResult!
+  transferChannelOwnership(channelName: String!, newOwnerUsername: String!, makePrimary: Boolean! = false): ChannelResult!
+  """
+  Select the channel that owns a namespace's bare path. Group namespaces
+  require the group Owner, personal namespaces their user; site admins
+  may act on both. Session-only, like other namespace-level settings.
+
+  Promoting a channel atomically demotes the current primary (if any) to
+  its scoped `namespace/name` path. Passing a null `channelName` demotes
+  the current primary without promoting a replacement, leaving the bare
+  namespace path unclaimed. Whenever a primary would be demoted the
+  request must pass `replaceExisting`; the refusal carries the current
+  primary so clients can ask for confirmation. Channel visibility is
+  unchanged.
+  """
+  setNamespacePrimaryChannel(
+    namespace: String!
+    """
+    The channel to promote; null demotes the current primary without a replacement.
+    """
+    channelName: String
+    """
+    Confirm demoting the existing primary channel to its scoped path.
+    """
+    replaceExisting: Boolean! = false
+  ): NamespacePrimaryChannelResult!
   """
   Delete multiple package variants from a channel in a single
   transaction. Reindex workflows are triggered once per unique
   subdir after all entries are removed.
   """
   batchDeletePackageVariants(channelName: String!, entries: [PackageVariantInput!]!): Boolean!
+  """
+  Start an asynchronous batch deletion of entire packages (all versions and platforms).
+  Returns a job object that can be polled for progress.
+  """
+  startBatchDeletePackages(channelName: String!, packageNames: [String!]!): BackgroundJob!
+  """
+  Get current subscription details
+  """
+  mySubscription: SubscriptionDetails
+  """
+  Confirm a pending plan change (user action from confirmation page).
+  Executes the subscription update with the locked proration details.
+  """
+  confirmPlanChange(token: String!): PendingPlanChangeDetails!
+  """
+  Decline a pending plan change (user action from confirmation page).
+  """
+  declinePlanChange(token: String!): PendingPlanChangeDetails!
+  """
+  Update group metadata and visibility. Group Owners and site admins only.
+  """
+  updateGroup(name: String!, displayName: String, description: String, isPublic: Boolean): Group!
+  """
+  Seed all e2e test users in Kratos and the database.
+  """
+  e2eSeedUsers: Boolean!
+  """
+  Atomically acquire a pool user. When `username` is provided, locks that
+  specific user (for manual testing). Otherwise picks the next available
+  user matching the optional `admin` filter (for test workers).
+  Stale locks (older than 5 minutes) are automatically released first.
+  """
+  e2eAcquireUser(admin: Boolean, username: String): E2ePoolUser!
+  """
+  Release a previously acquired pool user, making it available for other workers.
+  """
+  e2eReleaseUser(username: String!): Boolean!
 }
 
 """
@@ -860,6 +1343,22 @@ Format: %Y-%m-%d
 * `2000-02-24`
 """
 scalar NaiveDate
+
+"""
+Outcome of a primary-channel selection: the canonical public references the
+affected channels resolve to after the switch.
+"""
+type NamespacePrimaryChannelResult {
+  """
+  The promoted channel's canonical reference (the bare namespace path),
+  or null when the request only demoted.
+  """
+  promotedReference: String
+  """
+  The scoped reference the previous primary moved to, if one existed.
+  """
+  demotedReference: String
+}
 
 type OidcPublisher {
   id: String!
@@ -882,7 +1381,7 @@ enum OrderDirection {
 }
 
 interface Owner {
-  login: String!
+  name: String!
 }
 
 """
@@ -892,6 +1391,8 @@ type OwnerStats {
   ownerId: Int!
   ownerName: String
   channelCount: Int!
+  publicChannelCount: Int!
+  privateChannelCount: Int!
   totalStorageBytes: Int!
   totalMembers: Int!
   totalPackages: Int!
@@ -929,16 +1430,34 @@ type Package {
   """
   lastCreatedDate: DateTime
   """
+  Total size in bytes of all package archives across every version and
+  variant of this package.
+  """
+  totalSize: Int!
+  """
   retrieve unique versions for which download counts are available
   """
   downloadCountVersions: [String!]
   """
   Retrieve download counts for given package
   This information is obtained through the anaconda data
+
+  `versions` selects which versions to report on. Passing the literal `*`
+  sums the counts over every version and returns them as a single series
+  labelled `*`. That collapses the version dimension for the whole query,
+  so any concrete versions passed alongside `*` are ignored; request those
+  separately. Passing `null` reports on every version individually.
   """
   downloadCounts(aggregateBy: [DownloadCountAggregate!], versions: [String!]): [DownloadCountObject!]
   """
-  The version object for the latest version of this package
+  The version object for the latest visible version of this package — the
+  highest version that still has at least one variant that is not hidden
+  (variants are hidden when yanked-and-hidden). It only falls back to a
+  fully-hidden version when every variant of the package is hidden.
+  Maintained by the `latest_package_entry` table / triggers.
+
+  Exposed as `latestVersion` for API back-compat; the Rust name carries
+  the visibility semantics.
   """
   latestVersion: PackageVersion!
   """
@@ -950,7 +1469,17 @@ type Package {
   """
   All the variants of the package
   """
-  variants(limit: Int, page: Int, version: String, platform: String): PackageVariantPageResult!
+  variants(
+    limit: Int
+    page: Int
+    version: String
+    platform: String
+    buildString: String
+    createdAtFrom: DateTime
+    createdAtTo: DateTime
+    includeHidden: Boolean
+    orderBy: PackageVariantOrderBy
+  ): PackageVariantPageResult!
   """
   All the versions of the package.
   """
@@ -966,6 +1495,12 @@ type Package {
   """
   Retrieve monthly download counts for given package
   This data is calculated from the prefix.dev telemetry
+
+  `versions` selects which versions to report on. Passing the literal `*`
+  sums the counts over every version and returns them as a single series
+  labelled `*`. That collapses the version dimension for the whole query,
+  so any concrete versions passed alongside `*` are ignored; request those
+  separately. Passing `null` reports on every version individually.
   """
   monthlyCount(
     versions: [String!]
@@ -982,9 +1517,25 @@ type Package {
   """
   totalCount: Int
   """
-  Returns true if all variants of the latest version are verified (have attestations)
+  Returns true if every non-hidden variant of `latestVersion` (the latest
+  visible version) has an attestation, so the verified badge matches the
+  version that is actually displayed.
   """
   latestVersionVerified: Boolean!
+  """
+  All active (non-revoked) quarantines covering any variant of this
+  package. Surfaces quarantine state at the package level so a viewer
+  can see at a glance that *something* about this package is restricted
+  without having to scan the variants table for yanked / blocked pills.
+
+  Returns the [`PublicPackageQuarantineObject`] projection — same
+  auditable fields as the per-variant `PublicQuarantine`, plus the
+  selector tagged-union so a client can render a human-readable
+  description of *what* the quarantine covers, and an `affectedCount`
+  of how many of this package's variants the quarantine currently
+  covers.
+  """
+  activeQuarantines: [PublicPackageQuarantine!]!
 }
 
 """
@@ -1015,6 +1566,7 @@ Properties by which channel connections can be ordered.
 enum PackageOrderByFieldField {
   NAME
   LAST_CREATED_DATE
+  TOTAL_SIZE
 }
 
 """
@@ -1071,6 +1623,7 @@ type PackageVariant {
   md5: String
   sha256: String
   yankedReason: String
+  hidden: Boolean!
   repoDataPatches: JSON
   attestations(limit: Int, page: Int): AttestationPageResult!
   """
@@ -1087,6 +1640,25 @@ type PackageVariant {
   """
   totalDownloads: Int
   """
+  True when an active `Delete` quarantine covers this entry. The
+  repo binary returns 410 for blocked downloads and these entries
+  are omitted from repodata/shards.
+  """
+  isDownloadBlocked: Boolean!
+  """
+  Active (non-revoked) quarantines that cover this variant. Empty
+  when the variant is unaffected. Visible to anyone who can see
+  the variant — channel owners need to know *why* a download is
+  blocked, not just that it is.
+
+  Returns the [`PublicQuarantineObject`] projection — `id`,
+  `action`, `reason`, `createdAt` only. Selector internals
+  (`filenames`/`matchspec`/time bounds), `metadata`, and audit
+  user ids are admin-only and live on `Channel.quarantines` /
+  `Query.quarantine` instead.
+  """
+  activeQuarantines: [PublicQuarantine!]!
+  """
   The paths associated with the package entry
   """
   paths: [String!]
@@ -1095,6 +1667,28 @@ type PackageVariant {
 input PackageVariantInput {
   subdir: String!
   filename: String!
+}
+
+"""
+`oneof` so the schema stays open to alternative orderings (similarity,
+composite keys) without breaking existing clients.
+"""
+input PackageVariantOrderBy @oneOf {
+  byField: PackageVariantOrderByField
+}
+
+input PackageVariantOrderByField {
+  direction: OrderDirection! = ASC
+  field: PackageVariantOrderByFieldField!
+}
+
+"""
+Ordering field for the `variants` connection.
+"""
+enum PackageVariantOrderByFieldField {
+  BUILD_STRING
+  CREATED_AT
+  SIZE
 }
 
 type PackageVariantPageResult {
@@ -1154,10 +1748,433 @@ type PackageVersionPageResult {
   totalCount: Int!
 }
 
+"""
+Details shown to user on the confirmation page
+"""
+type PendingPlanChangeDetails {
+  token: String!
+  changeType: PlanChangeTypeEnum!
+  status: PlanChangeStatusType!
+  currentPlanId: Int!
+  targetPlanId: Int!
+  targetBillingPeriod: String!
+  expiresAt: DateTime!
+  currentPlan: Plan
+  targetPlan: Plan!
+  """
+  Stripe checkout URL, resolved from the checkout session cache
+  """
+  checkoutUrl: String
+  """
+  Proration details for paid-to-paid plan changes
+  """
+  proration: ProrationDetails
+}
+
+"""
+A subscription plan
+"""
+type Plan {
+  id: Int!
+  name: String!
+  displayName: String!
+  description: String
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  """
+  Whether this plan is publicly visible
+  """
+  isPublic: Boolean!
+  """
+  Display order for sorting (lower = first)
+  """
+  publicDisplayOrder: Int!
+  """
+  Whether this plan has been archived (soft-deleted)
+  """
+  isArchived: Boolean!
+  """
+  Which billing accounts this plan may be sold or assigned to
+  """
+  audience: PlanAudienceType!
+  """
+  Quotas associated with this plan
+  """
+  quotas: [Quota!]!
+  """
+  Prices associated with this plan
+  """
+  prices: [PlanPrice!]!
+  """
+  Number of active subscriptions using this plan
+  """
+  subscriptionCount: Int!
+  """
+  Whether this plan has a Stripe product configured
+  """
+  isStripeEnabled: Boolean!
+  """
+  Required quota keys this plan carries no explicit quota row for. A
+  plan must be complete (an empty list here) before it can become
+  public, purchasable, or assigned.
+  """
+  missingQuotaKeys: [MissingQuotaKey!]!
+}
+
+"""
+Combined plan and usage information
+"""
+type PlanAndSubscription {
+  """
+  The user's current subscription (None if no subscription)
+  """
+  subscription: Subscription
+  """
+  Current usage statistics
+  """
+  usage: Usages!
+}
+
+"""
+Which billing accounts a plan may be sold or assigned to
+"""
+enum PlanAudienceType {
+  """
+  Only user-backed billing accounts
+  """
+  USER
+  """
+  Only group-backed billing accounts
+  """
+  GROUP
+  """
+  Both user- and group-backed billing accounts
+  """
+  BOTH
+}
+
+"""
+Status of a pending plan change (GraphQL enum)
+"""
+enum PlanChangeStatusType {
+  PENDING
+  CONFIRMED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+"""
+Type of plan change
+"""
+enum PlanChangeTypeEnum {
+  CHECKOUT
+  PRORATION
+  CANCELLATION
+}
+
+"""
+A price for a plan
+"""
+type PlanPrice {
+  id: Int!
+  """
+  Price amount in smallest currency unit (e.g., cents)
+  """
+  priceCents: Int!
+  """
+  Billing interval (monthly or annual)
+  """
+  interval: BillingIntervalType!
+  """
+  Currency code (e.g., "usd")
+  """
+  currency: String!
+}
+
+"""
+A plan with pricing information (for public display)
+"""
+type PlanWithPricing {
+  id: Int!
+  name: String!
+  displayName: String!
+  description: String
+  """
+  Display order for sorting (lower = first)
+  """
+  publicDisplayOrder: Int!
+  """
+  All prices for this plan
+  """
+  prices: [PlanPrice!]!
+  """
+  Quotas associated with this plan
+  """
+  quotas: [Quota!]!
+  """
+  Whether this plan supports Stripe billing (has Stripe configuration)
+  """
+  isStripeEnabled: Boolean!
+}
+
+"""
+Proration details for a plan change (paid → paid transitions)
+"""
+type ProrationDetails {
+  amountDue: Int!
+  currency: String!
+  description: String!
+  newPlanAmount: Int!
+  nextBillingDate: DateTime!
+}
+
+"""
+Public projection of a quarantine surfaced on `Package.activeQuarantines`.
+Carries the same auditable fields as [`PublicQuarantineObject`] plus the
+selector tagged-union so a client can render a human-readable description
+(e.g. "packages matching `python >3` on linux-64", "uploaded between Apr 1
+and Apr 15, 2026") without a second round-trip.
+
+Selector internals are deliberately omitted from
+[`PublicQuarantineObject`] because that projection is exposed per-variant,
+where the selector reveals nothing useful and could leak operational
+signals across packages. On the package's own detail page the selector is
+scoped to *this* package by definition: the filenames, subdir, matchspec,
+and time bounds describe a subset of what the variants table directly
+below already shows. Disclosing them here is consistent with what the
+viewer can already see, so the richer projection is safe.
+
+Admin-only fields (`metadata`, audit user ids) remain on
+[`QuarantineObject`].
+"""
+type PublicPackageQuarantine {
+  id: Int!
+  action: QuarantineAction!
+  reason: String!
+  createdAt: DateTime!
+  selectorKind: QuarantineSelectorKind!
+  subdir: String
+  filenames: [String!]
+  matchspec: String
+  createdAtStart: DateTime
+  createdAtEnd: DateTime
+  """
+  Number of `package_entry` rows currently covered by this
+  quarantine. Counted via the M:N membership table at resolve time
+  so it stays in sync with downstream backfills (e.g. when a new
+  matching variant is uploaded).
+  """
+  affectedCount: Int!
+}
+
+"""
+Public projection of a quarantine, safe to expose to anyone who can
+see the affected `PackageVariant`. Carries only the fields a client
+needs to explain *why* a download is blocked or labelled — `action`
++ `reason` + a stable `id` for cross-references — and deliberately
+omits selector internals (`filenames`, `matchspec`, time bounds),
+admin metadata (`metadata`), and audit-trail user ids that
+[`QuarantineObject`] exposes for admin callers.
+"""
+type PublicQuarantine {
+  id: Int!
+  action: QuarantineAction!
+  reason: String!
+  createdAt: DateTime!
+}
+
 interface Publisher {
   id: String!
   createdAt: DateTime!
   updatedAt: DateTime!
+  accessMode: ChannelAccessMode!
+}
+
+type Quarantine {
+  id: Int!
+  action: QuarantineAction!
+  packageName: String!
+  subdir: String
+  filenames: [String!]
+  matchspec: String
+  createdAtStart: DateTime
+  createdAtEnd: DateTime
+  reason: String!
+  metadata: JSON
+  createdAt: DateTime!
+  revokedAt: DateTime
+  affectedCount: Int!
+  createdByUserId: String
+  revokedByUserId: String
+  """
+  The channel this quarantine applies to.
+  """
+  channel: Channel!
+  """
+  Username of the user who applied this quarantine. `None` when the
+  row predates user attribution or when the user has since been
+  deleted (FK is `ON DELETE SET NULL`). The raw `createdByUserId`
+  field stays exposed alongside this for cross-references.
+  """
+  createdByUsername: String
+  """
+  Username of the user who revoked this quarantine. `None` for
+  active quarantines or when the user has since been deleted.
+  """
+  revokedByUsername: String
+  """
+  The package entries currently linked to this quarantine via the
+  M:N membership table. Empty for a freshly-created `allowEmpty`
+  quarantine; populated as matching variants are ingested.
+  """
+  entries(limit: Int, page: Int): PackageVariantPageResult!
+}
+
+enum QuarantineAction {
+  """
+  Route matching entries through repodata's `removed` section.
+  Download still works. The M:N membership is the authoritative
+  record; `yanked_reason` is not touched.
+  """
+  YANK
+  """
+  Omit matching entries from repodata/shards and return 410 on
+  direct download.
+  """
+  DELETE
+}
+
+"""
+Describes what a quarantine selector would match without persisting
+anything. The `matched` page is paginated like every other listing
+in the schema (`page` / `current` / `pages` / `totalCount`).
+"""
+type QuarantineDryRun {
+  channel: Channel!
+  action: QuarantineAction!
+  packageName: String!
+  affectedCount: Int!
+  matched: PackageVariantPageResult!
+  """
+  The reason text that would land in `package_quarantine.reason`
+  if this dry-run were committed. Echoed back so a UI can render
+  a confirmation prompt without re-sending the input.
+  """
+  reason: String!
+  """
+  The metadata payload that would land in
+  `package_quarantine.metadata` if committed.
+  """
+  metadata: JSON
+}
+
+"""
+Pagination options for the `dryRun: true` branch of
+`applyQuarantine` / `updateQuarantine`.
+"""
+input QuarantineDryRunOptions {
+  """
+  Page size for the dry-run `matched` / `added` / `released`
+  lists. Defaults to 50, capped server-side at 200.
+  """
+  limit: Int
+  """
+  Page index, 0-based.
+  """
+  page: Int
+}
+
+"""
+Filter for `Channel.quarantines` and the top-level `Query.quarantines`.
+All fields are optional and conjunctive.
+"""
+input QuarantineFilter {
+  """
+  Match the stored `package_name` exactly.
+  """
+  packageName: String
+  """
+  Include revoked quarantines in the result. Defaults to false
+  — admins typically only care about live embargoes.
+  """
+  includeRevoked: Boolean! = false
+  """
+  Filter by quarantine action (`yank` or `delete`).
+  """
+  action: QuarantineAction
+  """
+  Match the channel name exactly. Ignored by `Channel.quarantines`
+  (already channel-scoped); used by the top-level `Query.quarantines`
+  to narrow a cross-channel listing.
+  """
+  channelName: String
+}
+
+input QuarantineMatchspecSelector {
+  matchspec: String!
+  subdir: String
+}
+
+type QuarantinePageResult {
+  """
+  The items on this page
+  """
+  page: [Quarantine!]!
+  """
+  The current page index
+  """
+  current: Int!
+  """
+  The total number of pages given the limit
+  """
+  pages: Int!
+  """
+  The total number of items
+  """
+  totalCount: Int!
+}
+
+"""
+Result of an `applyQuarantine` mutation: either the persisted
+`Quarantine` (`dryRun: false`) or a `QuarantineDryRun` describing
+what would happen without writing anything.
+"""
+union QuarantineResult = Quarantine | QuarantineDryRun
+
+input QuarantineSelector @oneOf {
+  variantList: QuarantineVariantListSelector
+  timeRange: QuarantineTimeRangeSelector
+  matchspec: QuarantineMatchspecSelector
+}
+
+"""
+Discriminator that tells a client which selector group on a
+[`PublicPackageQuarantineObject`] is authoritative — mirrors the
+backend [`package_quarantine::SelectorKind`] enum.
+"""
+enum QuarantineSelectorKind {
+  VARIANT_LIST
+  TIME_RANGE
+  MATCHSPEC
+}
+
+input QuarantineTimeRangeSelector {
+  packageName: String!
+  createdAtStart: DateTime
+  createdAtEnd: DateTime
+  subdir: String
+}
+
+input QuarantineVariantListSelector {
+  filenames: [String!]!
+  subdir: String
+  """
+  Required when `allowEmpty: true` is used and zero filenames
+  resolve to existing entries — the package name can't be
+  inferred from filenames alone in that case. Ignored otherwise.
+  """
+  packageName: String
 }
 
 """
@@ -1169,17 +2186,51 @@ type Query {
   """
   channels(filters: ChannelFilter, orderBy: ChannelOrderBy, limit: Int, page: Int): ChannelPageResult!
   """
-  Look up a channel by name
+  Look up a channel by its public reference ("namespace" or
+  "namespace/name").
   """
   channel(name: String!): Channel
   """
-  Returns the distinct owner usernames of all channels the current user can see.
+  Returns the distinct billing-owner names of all channels the current user can see.
   """
   channelOwners: [String!]!
+  """
+  Returns the distinct namespace names of all channels the current user can see.
+  """
+  channelNamespaces: [String!]!
+  """
+  Return channels that the current session user may select for a scoped API key.
+  """
+  apiKeyChannelCandidates(accessMode: ChannelAccessMode!, filters: ChannelFilter, limit: Int, page: Int): ChannelPageResult!
   """
   Check if the current user can manage a channel, and why.
   """
   channelManageAccess(channelName: String!): ChannelManageAccess!
+  """
+  Check if the current user can perform lifecycle operations on a channel.
+  """
+  channelLifecycleAccess(channelName: String!): ChannelLifecycleAccess!
+  """
+  Look up a background job by its public ID.
+  """
+  backgroundJob(id: String!): BackgroundJob
+  """
+  Look up the most recent active (PENDING or IN_PROGRESS) background job
+  for a channel, optionally filtered by job type.
+  """
+  activeBackgroundJob(channelName: String!, jobType: BackgroundJobType): BackgroundJob
+  """
+  Look up a single quarantine by id. Returns `None` when the id
+  doesn't exist; errors when the caller can't admin the owning
+  channel.
+  """
+  quarantine(id: Int!): Quarantine
+  """
+  Paginated listing of quarantines across every channel. Server
+  admins only — no per-channel membership check. Filter by
+  `channelName` to narrow; omit for the full cross-channel view.
+  """
+  quarantines(filter: QuarantineFilter, limit: Int, page: Int): QuarantinePageResult!
   """
   Look up all packages
 
@@ -1196,7 +2247,8 @@ type Query {
   """
   packageByMatchspec(matchSpec: String!, channels: [String!]!): Package
   """
-  Look up a variant by its unique properties
+  Look up a variant by its unique properties. The channel is addressed
+  by its public reference ("namespace" or "namespace/name").
   """
   variant(channelName: String!, packageName: String!, platformName: String!, fileName: String!): PackageVariant
   """
@@ -1208,9 +2260,21 @@ type Query {
   """
   viewer: User
   """
+  Look up a single user by their login.
+
+  The same user `users(filters: { login: { eq: ... } })` returns, without
+  the page wrapper. It grants no extra access: every field that needs a
+  guard carries its own, exactly as it does through the paginated query.
+  """
+  user(login: String!): User
+  """
   Get all known users
   """
   users(filters: UserFilter, orderBy: UserOrderBy, limit: Int, page: Int): UserPageResult!
+  """
+  Look up a group by name when the current subject may read it.
+  """
+  group(name: String!): Group
   """
   Look up an environment by owner and name
   """
@@ -1224,11 +2288,66 @@ type Query {
   """
   apiKeys: [ApiKeyResult!]!
   """
+  Get the current user's plan and usage statistics
+  """
+  planAndUsage: PlanAndSubscription!
+  """
+  Get all publicly available plans with pricing
+  should be used for displaying plans for upgrading in the UI
+  """
+  availablePlans: [PlanWithPricing!]!
+  """
+  Get the current user's pending plan change (if any).
+  Returns the most recent pending plan change for the authenticated user's owner.
+  """
+  myPendingPlanChange: PendingPlanChangeDetails
+  """
+  Get details of a pending plan change by token (for the confirmation page).
+  Requires authentication — the user must own the plan change.
+  """
+  pendingPlanChange(token: String!): PendingPlanChangeDetails
+  """
   Get comprehensive channel analytics for tiering decisions.
   Admin-only endpoint.
   """
   channelAnalytics: ChannelAnalytics!
+  """
+  List all e2e pool users with their lock status.
+  """
+  e2ePoolUsers: [E2ePoolUser!]!
+  """
+  The runtime feature configuration of this instance.
+  """
+  instanceConfig: InstanceConfig!
+  """
+  Check whether a name can be claimed by a user or group. This is an
+  advisory check for user feedback. Database constraints and
+  Kratos reservations remain authoritative when the name is claimed.
+  """
+  ownerNameAvailable(name: String!, flowId: String, allowCurrentUser: Boolean! = false): Boolean!
 }
+
+"""
+A quota limit definition
+"""
+type Quota {
+  id: Int!
+  """
+  The maximum value for this quota
+  where [`None`] means unlimited
+  """
+  maxValue: QuotaValue
+  """
+  The type of resource this quota limits
+  """
+  limitEntity: LimitEntityType!
+  """
+  Optional scope qualifier (e.g., only count public or private resources)
+  """
+  scope: VisibilityType
+}
+
+scalar QuotaValue
 
 """
 Different forms of descriptions of an environment.
@@ -1265,6 +2384,70 @@ input StringFilter {
   contains: String
 }
 
+type Subscription {
+  id: Int!
+  createdAt: DateTime!
+  ownerId: Int!
+  """
+  The plan this subscription is for
+  """
+  plan: Plan!
+}
+
+"""
+Detailed subscription information
+"""
+type SubscriptionDetails {
+  id: Int!
+  ownerId: Int!
+  planId: Int!
+  """
+  Status from Stripe (None if not a Stripe subscription)
+  """
+  status: SubscriptionStatusType
+  """
+  Billing period from Stripe (None if not a Stripe subscription)
+  """
+  billingPeriod: BillingPeriodType
+  """
+  Start of the current billing period (from Stripe)
+  """
+  currentPeriodStart: DateTime
+  """
+  End of the current billing period (from Stripe)
+  """
+  currentPeriodEnd: DateTime
+  """
+  Whether the subscription will cancel at period end (from Stripe)
+  """
+  cancelAtPeriodEnd: Boolean
+  """
+  The plan for this subscription
+  """
+  plan: Plan!
+  """
+  Current usage statistics
+  """
+  usage: Usages!
+  """
+  Channels owned by this subscription's owner.
+  """
+  channels: [Channel!]!
+}
+
+"""
+Subscription status type for GraphQL
+"""
+enum SubscriptionStatusType {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  TRIALING
+  INCOMPLETE
+  PAUSED
+}
+
 type TlogEntry {
   integratedTime: String
   logIndex: String
@@ -1272,9 +2455,46 @@ type TlogEntry {
 
 type TopDownloadCountObject {
   name: String!
-  channelId: Int!
   totalCount: Int!
 }
+
+type UpdateQuarantineDryRun {
+  quarantineId: Int!
+  """
+  Variants that would gain membership if this update committed.
+  """
+  added: PackageVariantPageResult!
+  """
+  Variants that would lose membership if this update committed.
+  """
+  released: PackageVariantPageResult!
+  addedCount: Int!
+  releasedCount: Int!
+}
+
+input UpdateQuarantineInput {
+  createdAtStart: DateTime
+  createdAtEnd: DateTime
+  matchspec: String
+  """
+  Set the stored `createdAtStart` bound to null. Wins over
+  `createdAtStart` if both are supplied. Needed because a null
+  value in `createdAtStart` itself means "leave the bound alone".
+  """
+  clearCreatedAtStart: Boolean! = false
+  """
+  Set the stored `createdAtEnd` bound to null. Wins over
+  `createdAtEnd` if both are supplied.
+  """
+  clearCreatedAtEnd: Boolean! = false
+}
+
+"""
+Result of an `updateQuarantine` mutation: either the persisted
+`Quarantine` or a diff describing the membership change a real
+update would produce (added vs released).
+"""
+union UpdateQuarantineResult = Quarantine | UpdateQuarantineDryRun
 
 """
 A multipart file upload
@@ -1304,7 +2524,43 @@ enum UrlKind {
   FEEDSTOCK
 }
 
+"""
+Usage and limit information for a single resource type
+"""
+type Usage {
+  """
+  The type of resource this stat is for
+  """
+  entityType: LimitEntityType!
+  """
+  Optional scope qualifier
+  """
+  scope: VisibilityType
+  """
+  Current usage count/bytes
+  """
+  used: Int!
+  """
+  Limit (None = unlimited)
+  """
+  limit: Int
+}
+
+"""
+Usage statistics for the current user
+"""
+type Usages {
+  """
+  Usage statistics per entity type
+  """
+  stats: [Usage!]!
+}
+
 type User implements Owner {
+  """
+  The stable owner namespace name for this user.
+  """
+  name: String!
   """
   The publicly visible username of the user
   """
@@ -1313,6 +2569,16 @@ type User implements Owner {
   Returns all the environments owned by a user
   """
   environments(limit: Int, page: Int): EnvironmentPageResult!
+  """
+  Returns channels where this user has a role.
+
+  Without a `roles` filter this goes through Melange's `channel#viewer`
+  relation, so direct owner/contributor/viewer roles and inherited
+  namespace/group role access are included without pulling in
+  unrelated public channels. When `roles` is provided this keeps the old
+  explicit-membership behavior and filters direct `channel_member` rows for
+  the requested roles.
+  """
   channels(
     filters: ChannelFilter
     orderBy: ChannelOrderBy
@@ -1395,6 +2661,14 @@ type VisibilityStats {
   totalStorageBytes: Int!
   avgStorageBytes: Float!
   totalDownloads: Int!
+}
+
+"""
+Visibility qualifier for quotas
+"""
+enum VisibilityType {
+  PUBLIC
+  PRIVATE
 }
 
 """

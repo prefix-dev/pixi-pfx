@@ -41,6 +41,8 @@ pub enum ChannelMemberRole {
 #[cynic(schema_path = "schema.graphql", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ChannelOrderByFieldField {
     Name,
+    BillingOwner,
+    Namespace,
     Size,
     CreatedAt,
     PackageCount,
@@ -57,6 +59,7 @@ pub enum ChannelOrderBySimilarityField {
 pub enum PackageOrderByFieldField {
     Name,
     LastCreatedDate,
+    TotalSize,
 }
 
 #[derive(cynic::Enum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +99,7 @@ pub struct ChannelFilter {
     pub and: Option<Vec<ChannelFilter>>,
     pub name: Option<StringFilter>,
     pub owner: Option<StringFilter>,
+    pub namespace: Option<StringFilter>,
     pub is_public: Option<bool>,
     pub has_owner: Option<bool>,
     pub has_mirror: Option<bool>,
@@ -173,6 +177,12 @@ pub struct Url {
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
 #[cynic(schema_path = "schema.graphql", graphql_type = "Channel")]
 pub struct ChannelNameOnly {
+    pub name: String,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
+#[cynic(schema_path = "schema.graphql", graphql_type = "Owner")]
+pub struct OwnerName {
     pub name: String,
 }
 

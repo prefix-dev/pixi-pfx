@@ -34,9 +34,13 @@ All commands output JSON to stdout. Success responses use `{"ok": true, "data": 
 
 ### Authentication
 
-Set your API token via flag or environment variable:
+By default, `pixi-pfx` uses credentials from rattler's authentication storage, including OAuth credentials created by `pixi auth login` or `rattler auth login`. OAuth access tokens are refreshed automatically. An explicit token takes precedence:
 
 ```bash
+# Uses rattler OAuth/auth storage
+pixi-pfx auth whoami
+
+# Explicit token override
 pixi-pfx --token <TOKEN> auth whoami
 # or
 export PREFIX_DEV_API_TOKEN=<TOKEN>
@@ -58,6 +62,11 @@ pixi-pfx channel list --search conda --limit 5
 pixi-pfx channel create my-channel --description "My channel" --public
 pixi-pfx channel update my-channel --description "Updated"
 pixi-pfx channel delete my-channel
+
+# CEP-6 channel notices
+pixi-pfx channel add-notice my-channel maintenance "Maintenance starts at 20:00 UTC" --level warning --expires-at 2026-08-20T22:00:00Z
+pixi-pfx channel update-notice my-channel maintenance "Maintenance moved to 21:00 UTC" --level warning
+pixi-pfx channel delete-notice my-channel maintenance
 
 # Members
 pixi-pfx channel add-member my-channel someuser contributor
@@ -97,6 +106,12 @@ pixi-pfx package versions conda-forge numpy --limit 10
 # Yank / unyank (requires auth)
 pixi-pfx package yank my-channel linux-64 pkg-1.0.conda --reason "broken build"
 pixi-pfx package unyank my-channel linux-64 pkg-1.0.conda
+
+# Copy pinned package files into a channel asynchronously (requires auth)
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy my-channel \
+  --packages '[{"url":"https://prefix.dev/conda-forge/linux-64/pkg-1.0.conda","sha256":"<64-hex-sha256>"}]'
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-status <job-id>
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package active-copy my-channel
 
 # Batch delete variants (requires auth)
 pixi-pfx package batch-delete my-channel --entries '[{"subdir":"linux-64","filename":"pkg-1.0.conda"}]'
