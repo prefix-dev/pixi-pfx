@@ -1,0 +1,58 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - pixi.toml
+      - schema.graphql
+      - src/**
+      - .github/workflows/publish.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-64
+            runner: ubuntu-latest
+          - platform: osx-64
+            runner: macos-14
+          - platform: osx-arm64
+            runner: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pixi
+        uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1
+        with:
+          pixi-version: latest
+          cache: true
+
+      - name: Build conda package
+        run: pixi publish --path . --target-platform ${{ matrix.platform }} --target-dir dist
+
+      - name: Publish to beta.prefix.dev
+        run: >-
+          pixi upload prefix
+          --url https://beta.prefix.dev
+          --channel pixi-extensions
+          --skip-existing
+          dist/*.conda
