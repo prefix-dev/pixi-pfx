@@ -16,6 +16,10 @@ platforms:
   - __unix=0=0
   - __osx=13.0
   - __archspec=0=m1
+- name: win-64
+  virtual-packages:
+  - __win=10.0
+  - __archspec=0=x86_64
 environments:
   default:
     channels:
@@ -112,6 +116,13 @@ environments:
       - conda: https://prefix.dev/conda-forge/osx-arm64/sigtool-codesign-0.1.3-h98dc951_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/tapi-1600.0.11.8-h997e182_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
+      win-64:
+      - conda: https://prefix.dev/conda-forge/noarch/rust-std-x86_64-pc-windows-msvc-1.97.1-h17fc481_1.conda
+      - conda: https://prefix.dev/conda-forge/noarch/vswhere-3.1.7-h40126e0_1.conda
+      - conda: https://prefix.dev/conda-forge/win-64/rust-1.97.1-hf8d6059_1.conda
+      - conda: https://prefix.dev/conda-forge/win-64/rust_win-64-1.97.1-ha913c02_2.conda
+      - conda: https://prefix.dev/conda-forge/win-64/vs2022_win-64-19.44.35207-ha74f236_41.conda
+      - conda: https://prefix.dev/conda-forge/win-64/vs_win-64-2022.14-ha74f236_41.conda
 packages:
 - conda: https://prefix.dev/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -395,6 +406,18 @@ packages:
   license_family: MIT
   size: 34391186
   timestamp: 1773065969624
+- conda: https://prefix.dev/conda-forge/noarch/rust-std-x86_64-pc-windows-msvc-1.97.1-h17fc481_1.conda
+  sha256: 89adf6ff3b0ff6521fbe1f98815f91bf43fd9b9f5bf39b62c71b96463df76795
+  md5: b0d47e376d05a679c72a568ac282edb1
+  depends:
+  - __win
+  constrains:
+  - rust >=1.97.1,<1.97.2.0a0
+  license: MIT
+  license_family: MIT
+  run_exports: {}
+  size: 26804888
+  timestamp: 1786464050922
 - conda: https://prefix.dev/conda-forge/noarch/rust-std-x86_64-unknown-linux-gnu-1.94.0-h2c6d0dc_0.conda
   sha256: 3980a10eee5f24ce7770c5d1665f93f363345c630bb6189176f3ab7bd9e8724d
   md5: df0c8674169061103f9cc0e112591eab
@@ -437,6 +460,16 @@ packages:
   license: LicenseRef-Public-Domain
   size: 119135
   timestamp: 1767016325805
+- conda: https://prefix.dev/conda-forge/noarch/vswhere-3.1.7-h40126e0_1.conda
+  sha256: b72270395326dc56de9bd6ca82f63791b3c8c9e2b98e25242a9869a4ca821895
+  md5: f622897afff347b715d046178ad745a5
+  depends:
+  - __win
+  license: MIT
+  license_family: MIT
+  run_exports: {}
+  size: 238764
+  timestamp: 1745560912727
 - conda: https://prefix.dev/conda-forge/osx-64/cctools_impl_osx-64-1030.6.3-llvm22_1_h8fe25a2_4.conda
   sha256: 9e003c254b6c1880e6c8f2d777b20d837db2b7aff161454d857693692fd862dd
   md5: 5d0b3b0b085354afc3b53c424e40121b
@@ -1097,3 +1130,59 @@ packages:
   license_family: BSD
   size: 433413
   timestamp: 1764777166076
+- conda: https://prefix.dev/conda-forge/win-64/rust-1.97.1-hf8d6059_1.conda
+  sha256: 91a61fddc71308f964cc17bc390ca8a1a530186106ab9bfb42faa3310d81cb66
+  md5: 0c7714de0414856c5b678a2e5ea14145
+  depends:
+  - rust-std-x86_64-pc-windows-msvc 1.97.1 h17fc481_1
+  license: MIT
+  license_family: MIT
+  run_exports: {}
+  size: 192771786
+  timestamp: 1786464169925
+- conda: https://prefix.dev/conda-forge/win-64/rust_win-64-1.97.1-ha913c02_2.conda
+  sha256: 709b8ade1ee616e10bd98dfc9a97a5d970a586681bf74e10acdf4aeb3c4b5850
+  md5: 9969a3629530a86b4eda1811c3e22838
+  depends:
+  - rust 1.97.1.*
+  - rust-std-x86_64-pc-windows-msvc 1.97.1.*
+  - vs_win-64 >=2019
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 10863
+  timestamp: 1787071946803
+- conda: https://prefix.dev/conda-forge/win-64/vs2022_win-64-19.44.35207-ha74f236_41.conda
+  sha256: 9d7d1b43cf4af5a8e8b1646175c9f899ffbcab189a33ac41127a96e7bcf41af0
+  md5: 04190e0ebd886433300ce9343ee98942
+  depends:
+  - vswhere
+  constrains:
+  - vs_win-64 2022.14
+  track_features:
+  - vc14
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports:
+    strong:
+    - vc >=14.3,<15
+    - vc14_runtime >=14.44.35208
+    - ucrt >=10.0.20348.0
+  size: 25462
+  timestamp: 1785358620723
+- conda: https://prefix.dev/conda-forge/win-64/vs_win-64-2022.14-ha74f236_41.conda
+  sha256: 8fea9100a176185ae74f82593084835e68811e53d12ef7f4d5534e259b0e72ff
+  md5: 88be1d0bd96a08d3d8da83f87066192d
+  depends:
+  - vs2022_win-64 19.44.35207.*
+  track_features:
+  - vc14
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports:
+    strong:
+    - vc >=14.3,<15
+    - vc14_runtime >=14.44.35208
+    - ucrt >=10.0.20348.0
+  size: 21612
+  timestamp: 1785358636481

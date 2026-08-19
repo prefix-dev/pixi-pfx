@@ -36,6 +36,8 @@ jobs:
             runner: macos-14
           - platform: osx-arm64
             runner: macos-14
+          - platform: win-64
+            runner: windows-latest
 
     steps:
       - name: Check out repository
@@ -51,6 +53,7 @@ jobs:
         run: pixi publish --path . --target-platform ${{ matrix.platform }} --target-dir dist
 
       - name: Publish to beta.prefix.dev
+        shell: bash
         run: >-
           pixi upload prefix
           --url https://beta.prefix.dev
