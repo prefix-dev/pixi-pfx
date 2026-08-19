@@ -334,13 +334,30 @@ pub enum PackageCommand {
         /// Package filename
         filename: String,
     },
-    /// Copy package files from URLs into a channel asynchronously
+    /// Copy package files from pinned URLs into a channel asynchronously
+    #[command(visible_alias = "copy-from-url")]
     Copy {
         /// Destination channel name
         channel: String,
         /// JSON array: [{"url":"https://...pkg.conda","sha256":"<64 hex>"}]
         #[arg(long)]
         packages: String,
+    },
+    /// Copy all matching variants of packages between prefix.dev channels
+    CopyFromChannel {
+        /// Destination channel name
+        destination: String,
+        /// Source channel name or canonical channel path
+        source: String,
+        /// Package names to copy
+        #[arg(required = true)]
+        packages: Vec<String>,
+        /// Only copy this package version
+        #[arg(long)]
+        version: Option<String>,
+        /// Only copy variants for this platform/subdir
+        #[arg(long)]
+        platform: Option<String>,
     },
     /// Get copy/background job status by job ID
     CopyStatus {
@@ -480,6 +497,41 @@ mod tests {
         assert_eq!(message, "Planned maintenance");
         assert!(matches!(level, NoticeLevel::Warning));
         assert_eq!(expires_at.as_deref(), Some("2026-08-20T22:00:00Z"));
+    }
+
+    #[test]
+    fn parses_copy_from_channel() {
+        let cli = Cli::try_parse_from([
+            "pixi-pfx",
+            "package",
+            "copy-from-channel",
+            "destination",
+            "source",
+            "numpy",
+            "scipy",
+            "--version",
+            "2.3.0",
+            "--platform",
+            "linux-64",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Package {
+                command: PackageCommand::CopyFromChannel {
+                    destination,
+                    source,
+                    packages,
+                    version: Some(version),
+                    platform: Some(platform),
+                }
+            } if destination == "destination"
+                && source == "source"
+                && packages == ["numpy", "scipy"]
+                && version == "2.3.0"
+                && platform == "linux-64"
+        ));
     }
 
     #[test]

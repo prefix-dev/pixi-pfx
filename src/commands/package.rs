@@ -177,6 +177,29 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
             Ok(serde_json::to_value(data.copy_packages_from_urls)?)
         }
 
+        PackageCommand::CopyFromChannel {
+            destination,
+            source,
+            packages,
+            version,
+            platform,
+        } => {
+            let packages = resolve_channel_packages(
+                client,
+                source,
+                packages,
+                version.as_ref(),
+                platform.as_ref(),
+            )
+            .await?;
+            let op = CopyPackagesMutation::build(CopyPackagesVars {
+                channel_name: destination.clone(),
+                packages,
+            });
+            let data = client.execute(op).await?;
+            Ok(serde_json::to_value(data.copy_packages_from_urls)?)
+        }
+
         PackageCommand::CopyStatus { id } => {
             let op = BackgroundJobQuery::build(BackgroundJobVars { id: id.clone() });
             let data = client.execute(op).await?;
@@ -203,6 +226,77 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
             Ok(serde_json::to_value(data.batch_delete_package_variants)?)
         }
     }
+}
+
+async fn resolve_channel_packages(
+    client: &PrefixClient,
+    source_channel: &str,
+    package_names: &[String],
+    version: Option<&String>,
+    platform: Option<&String>,
+) -> Result<Vec<CopyPackageUrlInput>, PfxError> {
+    const PAGE_SIZE: i32 = 100;
+    let mut inputs = Vec::new();
+
+    for package_name in package_names {
+        let mut page = 0;
+        loop {
+            let op = CopySourcePackageQuery::build(CopySourcePackageVars {
+                channel_name: source_channel.to_string(),
+                package_name: package_name.clone(),
+                limit: Some(PAGE_SIZE),
+                page: Some(page),
+                version: version.cloned(),
+                platform: platform.cloned(),
+            });
+            let data = client.execute(op).await?;
+            let package = data.package.ok_or_else(|| {
+                PfxError::InvalidArgument(format!(
+                    "package '{package_name}' was not found in source channel '{source_channel}'"
+                ))
+            })?;
+            let base_url = format!("{}/", package.channel.base_url.trim_end_matches('/'));
+            let base_url = reqwest::Url::parse(&base_url).map_err(|error| {
+                PfxError::InvalidArgument(format!(
+                    "source channel returned an invalid base URL: {error}"
+                ))
+            })?;
+
+            for variant in package.variants.page {
+                let sha256 = variant.sha256.ok_or_else(|| {
+                    PfxError::InvalidArgument(format!(
+                        "source variant '{}/{}' has no SHA-256 digest",
+                        variant.platform, variant.filename
+                    ))
+                })?;
+                let url = base_url
+                    .join(&format!("{}/{}", variant.platform, variant.filename))
+                    .map_err(|error| {
+                        PfxError::InvalidArgument(format!(
+                            "could not construct source URL for '{}/{}': {error}",
+                            variant.platform, variant.filename
+                        ))
+                    })?;
+                inputs.push(CopyPackageUrlInput {
+                    url: url.to_string(),
+                    sha256,
+                });
+            }
+
+            page += 1;
+            if page >= package.variants.pages {
+                break;
+            }
+        }
+    }
+
+    if inputs.is_empty() {
+        return Err(PfxError::InvalidArgument(format!(
+            "no package variants matched in source channel '{source_channel}'"
+        )));
+    }
+    validate_copy_packages(&inputs)?;
+    Ok(inputs)
 }
 
 fn validate_copy_packages(packages: &[CopyPackageUrlInput]) -> Result<(), PfxError> {

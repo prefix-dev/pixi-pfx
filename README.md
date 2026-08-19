@@ -206,17 +206,28 @@ Yanking keeps the file but hides it from solvers; `batch-delete` removes variant
 
 ### Copy packages into a channel
 
-Copying pulls package files from URLs into one of your channels. Each entry pins a `url` together
-with the expected `sha256`, so a copy either reproduces exactly that file or fails. The work runs as
-a background job:
+Copying between channels resolves every matching source variant and submits it to the asynchronous
+copy job. Multiple package names are accepted, and optional version/platform filters narrow the
+selection:
 
 ```bash
-pixi-pfx package copy my-channel \
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-from-channel \
+  destination-channel source-channel numpy scipy
+
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-from-channel \
+  destination-channel source-channel numpy --version 2.3.0 --platform linux-64
+```
+
+Packages can also be snatched from arbitrary URLs. Each entry pins a `url` together with its
+expected `sha256`, so the copy either reproduces exactly that file or fails:
+
+```bash
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy my-channel \
   --packages '[{"url":"https://prefix.dev/conda-forge/linux-64/pkg-1.0.conda","sha256":"<64-hex-sha256>"}]'
 
-# follow a job by id, or ask what is currently running for a channel
-pixi-pfx package copy-status <job-id>
-pixi-pfx package active-copy my-channel
+# Follow a job by id, or ask what is currently running for a channel
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-status <job-id>
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package active-copy my-channel
 ```
 
 ## API keys

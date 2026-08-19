@@ -123,6 +123,7 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
                     action: "Package variant unyanked.",
                 },
                 PackageCommand::Copy { .. }
+                | PackageCommand::CopyFromChannel { .. }
                 | PackageCommand::CopyStatus { .. }
                 | PackageCommand::ActiveCopy { .. } => OutputKind::BackgroundJob,
                 PackageCommand::BatchDelete { .. } => OutputKind::BoolResult {

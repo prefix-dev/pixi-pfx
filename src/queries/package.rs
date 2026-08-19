@@ -255,6 +255,63 @@ pub struct PackageVersionsQuery {
     pub package: Option<PackageWithVersions>,
 }
 
+#[derive(cynic::QueryFragment, Debug, Clone)]
+#[cynic(schema_path = "schema.graphql", graphql_type = "Channel")]
+pub struct CopySourceChannel {
+    pub base_url: String,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone)]
+#[cynic(schema_path = "schema.graphql", graphql_type = "PackageVariant")]
+pub struct CopySourceVariant {
+    pub filename: String,
+    pub platform: String,
+    pub sha256: Option<String>,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "PackageVariantPageResult"
+)]
+pub struct CopySourceVariantPage {
+    pub page: Vec<CopySourceVariant>,
+    pub pages: i32,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Package",
+    variables = "CopySourcePackageVars"
+)]
+pub struct CopySourcePackage {
+    pub channel: CopySourceChannel,
+    #[arguments(limit: $limit, page: $page, version: $version, platform: $platform)]
+    pub variants: CopySourceVariantPage,
+}
+
+#[derive(cynic::QueryVariables)]
+pub struct CopySourcePackageVars {
+    pub channel_name: String,
+    pub package_name: String,
+    pub limit: Option<i32>,
+    pub page: Option<i32>,
+    pub version: Option<String>,
+    pub platform: Option<String>,
+}
+
+#[derive(cynic::QueryFragment, Debug)]
+#[cynic(
+    schema_path = "schema.graphql",
+    graphql_type = "Query",
+    variables = "CopySourcePackageVars"
+)]
+pub struct CopySourcePackageQuery {
+    #[arguments(channelName: $channel_name, name: $package_name)]
+    pub package: Option<CopySourcePackage>,
+}
+
 // ── Mutations ───────────────────────────────────────────────────────────────
 
 #[derive(cynic::QueryVariables)]
