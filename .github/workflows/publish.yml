@@ -8,6 +8,7 @@ on:
       - Cargo.lock
       - Cargo.toml
       - pixi.toml
+      - pixi.lock
       - schema.graphql
       - src/**
       - .github/workflows/publish.yml
