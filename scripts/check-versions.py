@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import subprocess
 import sys
 import tomllib
 
@@ -20,9 +21,28 @@ def read_version(path: pathlib.Path, table: str) -> str:
     return value
 
 
+def version_at_ref(ref: str) -> str:
+    manifest = subprocess.run(
+        ["git", "show", f"{ref}:Cargo.toml"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    data = tomllib.loads(manifest.decode())
+    value = data["package"]["version"]
+    if not isinstance(value, str):
+        raise TypeError(f"{ref}:Cargo.toml: package.version is not a string")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tag", help="also require this git tag (vX.Y.Z) to match")
+    parser.add_argument(
+        "--changed-from",
+        metavar="GIT_REF",
+        help="return status 3 unless package.version changed from this ref",
+    )
     args = parser.parse_args()
 
     versions = {
@@ -39,6 +59,15 @@ def main() -> int:
     if args.tag and args.tag != f"v{version}":
         print(f"tag {args.tag!r} does not match package version v{version}", file=sys.stderr)
         return 1
+
+    if args.changed_from:
+        previous = version_at_ref(args.changed_from)
+        if previous == version:
+            print(
+                f"package version v{version} did not change from {args.changed_from}",
+                file=sys.stderr,
+            )
+            return 3
 
     print(version)
     return 0

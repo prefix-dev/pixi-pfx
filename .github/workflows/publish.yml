@@ -22,7 +22,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-check:
+    name: Check release version
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release version
+        id: release
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python3 scripts/check-versions.py --tag "$GITHUB_REF_NAME"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            set +e
+            python3 scripts/check-versions.py --changed-from "$BEFORE"
+            status=$?
+            set -e
+            if [[ $status -eq 0 ]]; then
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            elif [[ $status -eq 3 ]]; then
+              echo "No package version change; skipping publish."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+            else
+              exit "$status"
+            fi
+          else
+            python3 scripts/check-versions.py
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
   publish:
+    needs: release-check
+    if: needs.release-check.outputs.publish == 'true'
     name: Publish ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -41,15 +81,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Check synchronized versions
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            python3 scripts/check-versions.py --tag "$GITHUB_REF_NAME"
-          else
-            python3 scripts/check-versions.py
-          fi
 
       - name: Install pixi
         uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1
