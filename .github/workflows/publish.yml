@@ -17,8 +17,10 @@ permissions:
   contents: read
   id-token: write
 
+# Keep reruns for the same commit serialized without allowing a later source-only
+# commit to cancel a queued version release.
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
