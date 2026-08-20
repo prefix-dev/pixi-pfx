@@ -230,6 +230,8 @@ fn format_api_key_list(v: &Value) -> String {
                 sv(k, "expires_at"),
                 sv(k, "last_used_at"),
                 sv(k, "revoked_at"),
+                sv(k, "access_mode"),
+                nested_name(k, "channel"),
             ]
         })
         .collect();
@@ -241,6 +243,8 @@ fn format_api_key_list(v: &Value) -> String {
             "EXPIRES",
             "LAST USED",
             "REVOKED",
+            "ACCESS",
+            "CHANNEL",
         ],
         &rows,
     )
@@ -252,6 +256,8 @@ fn format_api_key(v: &Value) -> String {
         ("Description", sv(v, "description")),
         ("Created", sv(v, "created_at")),
         ("Expires", sv(v, "expires_at")),
+        ("Access", sv(v, "access_mode")),
+        ("Channel", nested_name(v, "channel")),
     ]);
     if let Some(key) = v.get("key").and_then(|v| v.as_str()) {
         out.push_str(&format!("\nAPI Key: {key}\n"));
@@ -275,54 +281,53 @@ fn format_channel_detail(v: &Value) -> String {
         ("Updated", sv(v, "updated_at")),
     ]);
 
-    if let Some(notices) = v.get("notices").and_then(Value::as_array) {
-        if !notices.is_empty() {
-            out.push('\n');
-            let rows = notices
-                .iter()
-                .map(|notice| {
-                    vec![
-                        sv(notice, "id"),
-                        sv(notice, "level"),
-                        sv(notice, "message"),
-                        sv(notice, "expires_at"),
-                    ]
-                })
-                .collect::<Vec<_>>();
-            out.push_str(&table(&["NOTICE", "LEVEL", "MESSAGE", "EXPIRES"], &rows));
-        }
+    if let Some(notices) = v.get("notices").and_then(Value::as_array)
+        && !notices.is_empty()
+    {
+        out.push('\n');
+        let rows = notices
+            .iter()
+            .map(|notice| {
+                vec![
+                    sv(notice, "id"),
+                    sv(notice, "level"),
+                    sv(notice, "message"),
+                    sv(notice, "expires_at"),
+                ]
+            })
+            .collect::<Vec<_>>();
+        out.push_str(&table(&["NOTICE", "LEVEL", "MESSAGE", "EXPIRES"], &rows));
     }
 
-    if let Some(mirror) = v.get("mirror") {
-        if !mirror.is_null() {
-            out.push_str(&format!("Mirror:   {}\n", sv(mirror, "url")));
-        }
+    if let Some(mirror) = v.get("mirror")
+        && !mirror.is_null()
+    {
+        out.push_str(&format!("Mirror:   {}\n", sv(mirror, "url")));
     }
 
-    if let Some(members) = v.get("channel_members").and_then(|v| v.as_array()) {
-        if !members.is_empty() {
-            out.push('\n');
-            let rows: Vec<Vec<String>> = members
-                .iter()
-                .map(|m| {
-                    vec![
-                        sv(m, "username"),
-                        sv(m, "role"),
-                        yes_no(m, "is_owner").to_string(),
-                    ]
-                })
-                .collect();
-            out.push_str(&table(&["MEMBER", "ROLE", "OWNER"], &rows));
-        }
+    if let Some(members) = v.get("channel_members").and_then(|v| v.as_array())
+        && !members.is_empty()
+    {
+        out.push('\n');
+        let rows: Vec<Vec<String>> = members
+            .iter()
+            .map(|m| {
+                vec![
+                    sv(m, "username"),
+                    sv(m, "role"),
+                    yes_no(m, "is_owner").to_string(),
+                ]
+            })
+            .collect();
+        out.push_str(&table(&["MEMBER", "ROLE", "OWNER"], &rows));
     }
 
-    if let Some(publishers) = v.get("oidc_publishers").and_then(|v| v.as_array()) {
-        if !publishers.is_empty() {
-            out.push('\n');
-            let rows: Vec<Vec<String>> =
-                publishers.iter().map(|p| format_publisher_row(p)).collect();
-            out.push_str(&table(&["TYPE", "ID", "DETAILS"], &rows));
-        }
+    if let Some(publishers) = v.get("oidc_publishers").and_then(|v| v.as_array())
+        && !publishers.is_empty()
+    {
+        out.push('\n');
+        let rows: Vec<Vec<String>> = publishers.iter().map(format_publisher_row).collect();
+        out.push_str(&table(&["TYPE", "ID", "DETAILS"], &rows));
     }
 
     out
@@ -412,6 +417,7 @@ fn format_github_publisher(v: &Value) -> String {
         ("Repo", sv(v, "repository_name")),
         ("Workflow", sv(v, "workflow_filename")),
         ("Environment", sv(v, "environment")),
+        ("Access", sv(v, "access_mode")),
         ("Created", sv(v, "created_at")),
     ])
 }
@@ -424,6 +430,7 @@ fn format_gitlab_publisher(v: &Value) -> String {
         ("Project", sv(v, "project")),
         ("Workflow", sv(v, "workflow_filepath")),
         ("Environment", sv(v, "environment")),
+        ("Access", sv(v, "access_mode")),
         ("Created", sv(v, "created_at")),
     ])
 }
@@ -434,6 +441,7 @@ fn format_google_publisher(v: &Value) -> String {
         ("ID", sv(v, "id")),
         ("Email", sv(v, "email")),
         ("Subject", sv(v, "sub")),
+        ("Access", sv(v, "access_mode")),
         ("Created", sv(v, "created_at")),
     ])
 }
@@ -490,32 +498,32 @@ fn format_package_detail(v: &Value) -> String {
 
     if let Some(variants) = v.get("variants") {
         let page = variants.get("page").and_then(|v| v.as_array());
-        if let Some(items) = page {
-            if !items.is_empty() {
-                out.push('\n');
-                let rows: Vec<Vec<String>> = items
-                    .iter()
-                    .map(|var| {
-                        let size = var
-                            .get("size")
-                            .and_then(|s| s.as_i64())
-                            .map(format_size)
-                            .unwrap_or_else(|| "-".to_string());
-                        vec![
-                            sv(var, "filename"),
-                            sv(var, "version"),
-                            sv(var, "build_string"),
-                            sv(var, "platform"),
-                            size,
-                        ]
-                    })
-                    .collect();
-                out.push_str(&table(
-                    &["FILENAME", "VERSION", "BUILD", "PLATFORM", "SIZE"],
-                    &rows,
-                ));
-                out.push_str(&page_footer(variants));
-            }
+        if let Some(items) = page
+            && !items.is_empty()
+        {
+            out.push('\n');
+            let rows: Vec<Vec<String>> = items
+                .iter()
+                .map(|var| {
+                    let size = var
+                        .get("size")
+                        .and_then(|s| s.as_i64())
+                        .map(format_size)
+                        .unwrap_or_else(|| "-".to_string());
+                    vec![
+                        sv(var, "filename"),
+                        sv(var, "version"),
+                        sv(var, "build_string"),
+                        sv(var, "platform"),
+                        size,
+                    ]
+                })
+                .collect();
+            out.push_str(&table(
+                &["FILENAME", "VERSION", "BUILD", "PLATFORM", "SIZE"],
+                &rows,
+            ));
+            out.push_str(&page_footer(variants));
         }
     }
 

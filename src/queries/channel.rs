@@ -126,6 +126,7 @@ pub struct GithubPublisherDetail {
     pub repository_owner: String,
     pub workflow_filename: String,
     pub environment: String,
+    pub access_mode: ChannelAccessMode,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
@@ -138,6 +139,7 @@ pub struct GitlabPublisherDetail {
     pub project: String,
     pub workflow_filepath: String,
     pub environment: String,
+    pub access_mode: ChannelAccessMode,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
@@ -148,6 +150,7 @@ pub struct GooglePublisherDetail {
     pub updated_at: DateTime,
     pub email: String,
     pub sub: String,
+    pub access_mode: ChannelAccessMode,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
@@ -315,6 +318,7 @@ pub struct AddGithubOidcVars {
     pub repository_name: String,
     pub workflow_filename: String,
     pub environment: Option<String>,
+    pub access_mode: Option<ChannelAccessMode>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
@@ -330,6 +334,7 @@ pub struct AddGithubOidcMutation {
         repositoryName: $repository_name,
         workflowFilename: $workflow_filename,
         environment: $environment,
+        accessMode: $access_mode,
     )]
     pub add_github_oidc_publisher: GithubPublisherDetail,
 }
@@ -341,6 +346,7 @@ pub struct AddGitlabOidcVars {
     pub project: String,
     pub workflow_filepath: String,
     pub environment: Option<String>,
+    pub access_mode: Option<ChannelAccessMode>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
@@ -356,6 +362,7 @@ pub struct AddGitlabOidcMutation {
         project: $project,
         workflowFilepath: $workflow_filepath,
         environment: $environment,
+        accessMode: $access_mode,
     )]
     pub add_gitlab_oidc_publisher: GitlabPublisherDetail,
 }
@@ -365,6 +372,7 @@ pub struct AddGoogleOidcVars {
     pub channel_name: String,
     pub email: String,
     pub sub: Option<String>,
+    pub access_mode: Option<ChannelAccessMode>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
@@ -374,7 +382,7 @@ pub struct AddGoogleOidcVars {
     variables = "AddGoogleOidcVars"
 )]
 pub struct AddGoogleOidcMutation {
-    #[arguments(channelName: $channel_name, email: $email, sub: $sub)]
+    #[arguments(channelName: $channel_name, email: $email, sub: $sub, accessMode: $access_mode)]
     pub add_google_oidc_publisher: GooglePublisherDetail,
 }
 

@@ -319,6 +319,7 @@ pub struct YankVars {
     pub channel_name: String,
     pub entries: Vec<PackageVariantInput>,
     pub reason: String,
+    pub also_hide: Option<bool>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
@@ -328,7 +329,12 @@ pub struct YankVars {
     variables = "YankVars"
 )]
 pub struct YankMutation {
-    #[arguments(channelName: $channel_name, entries: $entries, reason: $reason)]
+    #[arguments(
+        channelName: $channel_name,
+        entries: $entries,
+        reason: $reason,
+        alsoHide: $also_hide,
+    )]
     pub batch_yank_package_variants: bool,
 }
 
@@ -336,6 +342,7 @@ pub struct YankMutation {
 pub struct UnyankVars {
     pub channel_name: String,
     pub entries: Vec<PackageVariantInput>,
+    pub also_unhide: Option<bool>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Serialize)]
@@ -345,7 +352,7 @@ pub struct UnyankVars {
     variables = "UnyankVars"
 )]
 pub struct UnyankMutation {
-    #[arguments(channelName: $channel_name, entries: $entries)]
+    #[arguments(channelName: $channel_name, entries: $entries, alsoUnhide: $also_unhide)]
     pub batch_unyank_package_variants: bool,
 }
 
@@ -456,4 +463,49 @@ pub struct ActiveCopyJobVars {
 pub struct ActiveCopyJobQuery {
     #[arguments(channelName: $channel_name, jobType: $job_type)]
     pub active_background_job: Option<BackgroundJob>,
+}
+
+#[cfg(test)]
+mod tests {
+    use cynic::{MutationBuilder, QueryBuilder};
+
+    use super::*;
+
+    #[test]
+    fn copy_mutation_serializes_expected_variables() {
+        let operation = CopyPackagesMutation::build(CopyPackagesVars {
+            channel_name: "destination".to_string(),
+            packages: vec![CopyPackageUrlInput {
+                url: "https://example.com/linux-64/pkg.conda".to_string(),
+                sha256: "a".repeat(64),
+            }],
+        });
+        let value = serde_json::to_value(operation).unwrap();
+        assert_eq!(value["variables"]["channelName"], "destination");
+        assert_eq!(value["variables"]["packages"][0]["sha256"], "a".repeat(64));
+        assert!(
+            value["query"]
+                .as_str()
+                .unwrap()
+                .contains("copyPackagesFromUrls")
+        );
+    }
+
+    #[test]
+    fn source_query_includes_copy_filters_and_pagination() {
+        let operation = CopySourcePackageQuery::build(CopySourcePackageVars {
+            channel_name: "source".to_string(),
+            package_name: "numpy".to_string(),
+            limit: Some(100),
+            page: Some(2),
+            version: Some("2.3.0".to_string()),
+            platform: Some("linux-64".to_string()),
+        });
+        let value = serde_json::to_value(operation).unwrap();
+        assert_eq!(value["variables"]["channelName"], "source");
+        assert_eq!(value["variables"]["packageName"], "numpy");
+        assert_eq!(value["variables"]["page"], 2);
+        assert_eq!(value["variables"]["version"], "2.3.0");
+        assert_eq!(value["variables"]["platform"], "linux-64");
+    }
 }

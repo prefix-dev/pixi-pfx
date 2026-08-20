@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "pixi-pfx", about = "prefix.dev GraphQL API client for pixi")]
@@ -30,6 +30,11 @@ pub enum Command {
     Package {
         #[command(subcommand)]
         command: PackageCommand,
+    },
+    /// Inspect asynchronous background jobs
+    Job {
+        #[command(subcommand)]
+        command: JobCommand,
     },
     /// Authentication and API key management
     Auth {
@@ -190,6 +195,9 @@ pub enum ChannelCommand {
         /// GitHub environment
         #[arg(long)]
         environment: Option<String>,
+        /// Channel access granted to this publisher
+        #[arg(long, value_enum)]
+        access_mode: Option<AccessMode>,
     },
     /// Add a GitLab OIDC publisher to a channel
     AddGitlabOidc {
@@ -207,6 +215,9 @@ pub enum ChannelCommand {
         /// GitLab environment
         #[arg(long)]
         environment: Option<String>,
+        /// Channel access granted to this publisher
+        #[arg(long, value_enum)]
+        access_mode: Option<AccessMode>,
     },
     /// Add a Google OIDC publisher to a channel
     AddGoogleOidc {
@@ -218,6 +229,9 @@ pub enum ChannelCommand {
         /// Optional subject constraint
         #[arg(long)]
         sub: Option<String>,
+        /// Channel access granted to this publisher
+        #[arg(long, value_enum)]
+        access_mode: Option<AccessMode>,
     },
     /// Delete an OIDC publisher from a channel
     DeleteOidc {
@@ -334,14 +348,41 @@ pub enum PackageCommand {
         /// Package filename
         filename: String,
     },
+    /// Yank multiple package variants
+    BatchYank {
+        channel: String,
+        /// JSON array of entries: [{"subdir":"...","filename":"..."}]
+        #[arg(long)]
+        entries: String,
+        #[arg(long)]
+        reason: String,
+        /// Also hide variants from package listings
+        #[arg(long)]
+        also_hide: bool,
+    },
+    /// Unyank multiple package variants
+    BatchUnyank {
+        channel: String,
+        /// JSON array of entries: [{"subdir":"...","filename":"..."}]
+        #[arg(long)]
+        entries: String,
+        /// Also restore hidden variants to package listings
+        #[arg(long)]
+        also_unhide: bool,
+    },
     /// Copy package files from pinned URLs into a channel asynchronously
     #[command(visible_alias = "copy-from-url")]
     Copy {
         /// Destination channel name
         channel: String,
         /// JSON array: [{"url":"https://...pkg.conda","sha256":"<64 hex>"}]
-        #[arg(long)]
-        packages: String,
+        #[arg(long, required_unless_present = "package", conflicts_with = "package")]
+        packages: Option<String>,
+        /// Pinned package as URL=SHA256; may be repeated
+        #[arg(long = "package", value_name = "URL=SHA256")]
+        package: Vec<String>,
+        #[command(flatten)]
+        execution: CopyExecutionArgs,
     },
     /// Copy all matching variants of packages between prefix.dev channels
     CopyFromChannel {
@@ -358,11 +399,15 @@ pub enum PackageCommand {
         /// Only copy variants for this platform/subdir
         #[arg(long)]
         platform: Option<String>,
+        #[command(flatten)]
+        execution: CopyExecutionArgs,
     },
     /// Get copy/background job status by job ID
     CopyStatus {
         /// Background job ID returned by `package copy`
         id: String,
+        #[command(flatten)]
+        wait: CopyWaitArgs,
     },
     /// Get the active package-copy job for a channel
     ActiveCopy {
@@ -379,10 +424,59 @@ pub enum PackageCommand {
     },
 }
 
+#[derive(Args)]
+pub struct CopyExecutionArgs {
+    /// Resolve and print files without starting a copy job
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub wait: CopyWaitArgs,
+}
+
+#[derive(Args)]
+pub struct CopyWaitArgs {
+    /// Wait for the background job to finish
+    #[arg(long)]
+    pub wait: bool,
+    /// Seconds between status checks
+    #[arg(long, default_value = "2")]
+    pub poll_interval: u64,
+    /// Maximum seconds to wait
+    #[arg(long, default_value = "600")]
+    pub timeout: u64,
+}
+
+// ── Background Job Commands ─────────────────────────────────────────────────
+
+#[derive(Subcommand)]
+pub enum JobCommand {
+    /// Get a background job by ID
+    Get {
+        id: String,
+        #[command(flatten)]
+        wait: CopyWaitArgs,
+    },
+    /// Get the active background job for a channel
+    Active {
+        channel: String,
+        /// Optionally filter by job type
+        #[arg(long, value_enum)]
+        job_type: Option<JobType>,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum JobType {
+    BatchDeletePackages,
+    CopyPackagesFromUrl,
+}
+
 // ── Auth Commands ───────────────────────────────────────────────────────────
 
 #[derive(Subcommand)]
 pub enum AuthCommand {
+    /// Show which credential source would be used (never prints secrets)
+    Status,
     /// Show the currently authenticated user
     Whoami,
     /// Manage API keys
@@ -406,6 +500,12 @@ pub enum ApiKeyCommand {
         /// Expiry datetime (RFC3339)
         #[arg(long)]
         expires_at: Option<String>,
+        /// Access granted by this key
+        #[arg(long, value_enum)]
+        access_mode: Option<AccessMode>,
+        /// Scope the key to this channel
+        #[arg(long, requires = "access_mode")]
+        channel: Option<String>,
     },
     /// Revoke an API key
     Revoke {
@@ -456,6 +556,14 @@ pub enum NoticeLevel {
     Info,
     Warning,
     Critical,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum AccessMode {
+    All,
+    Read,
+    ReadWrite,
+    ReadWriteDelete,
 }
 
 #[cfg(test)]
@@ -525,6 +633,7 @@ mod tests {
                     packages,
                     version: Some(version),
                     platform: Some(platform),
+                    ..
                 }
             } if destination == "destination"
                 && source == "source"

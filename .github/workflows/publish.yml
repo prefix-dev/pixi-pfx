@@ -4,13 +4,12 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
+    # A release build is triggered by a package-version change. Source-only
+    # changes are validated by CI but are not republished under an old version.
     paths:
-      - Cargo.lock
-      - Cargo.toml
       - pixi.toml
-      - pixi.lock
-      - schema.graphql
-      - src/**
       - .github/workflows/publish.yml
   workflow_dispatch:
 
@@ -42,6 +41,15 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Check synchronized versions
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python3 scripts/check-versions.py --tag "$GITHUB_REF_NAME"
+          else
+            python3 scripts/check-versions.py
+          fi
 
       - name: Install pixi
         uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1

@@ -50,9 +50,19 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
             )))
         }
 
+        Command::Job { command } => {
+            let client = PrefixClient::new(cli.endpoint.clone(), cli.token.clone());
+            let val = commands::package::handle_job(&client, command).await?;
+            Ok(CommandOutput::new(val, OutputKind::BackgroundJob))
+        }
+
         Command::Auth { command } => {
             let client = PrefixClient::new(cli.endpoint.clone(), cli.token.clone());
             match command {
+                AuthCommand::Status => {
+                    let val = client.authentication_status().await?;
+                    Ok(CommandOutput::raw(val))
+                }
                 AuthCommand::Whoami => {
                     let val = commands::auth::handle_whoami(&client).await?;
                     Ok(CommandOutput::new(val, OutputKind::User))
@@ -122,6 +132,18 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
                 PackageCommand::Unyank { .. } => OutputKind::BoolResult {
                     action: "Package variant unyanked.",
                 },
+                PackageCommand::BatchYank { .. } => OutputKind::BoolResult {
+                    action: "Package variants yanked.",
+                },
+                PackageCommand::BatchUnyank { .. } => OutputKind::BoolResult {
+                    action: "Package variants unyanked.",
+                },
+                PackageCommand::Copy { execution, .. }
+                | PackageCommand::CopyFromChannel { execution, .. }
+                    if execution.dry_run =>
+                {
+                    OutputKind::Raw
+                }
                 PackageCommand::Copy { .. }
                 | PackageCommand::CopyFromChannel { .. }
                 | PackageCommand::CopyStatus { .. }

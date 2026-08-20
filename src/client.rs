@@ -25,6 +25,53 @@ impl PrefixClient {
         }
     }
 
+    pub async fn authentication_status(&self) -> Result<serde_json::Value, PfxError> {
+        if self.token.is_some() {
+            return Ok(serde_json::json!({
+                "endpoint": self.endpoint,
+                "source": "explicit-token",
+                "method": "BearerToken",
+            }));
+        }
+
+        let storage = self
+            .auth_storage
+            .as_ref()
+            .map_err(|error| PfxError::AuthStorage(error.clone()))?;
+        let (_, auth) = storage
+            .get_by_url_refreshed(&self.endpoint)
+            .await
+            .map_err(|error| PfxError::AuthStorage(error.to_string()))?;
+        let status = match auth {
+            Some(Authentication::OAuth {
+                expires_at,
+                refresh_token,
+                token_endpoint,
+                client_id,
+                ..
+            }) => serde_json::json!({
+                "endpoint": self.endpoint,
+                "source": "rattler-storage",
+                "method": "OAuth",
+                "expires_at": expires_at,
+                "has_refresh_token": refresh_token.is_some(),
+                "token_endpoint": token_endpoint,
+                "client_id": client_id,
+            }),
+            Some(auth) => serde_json::json!({
+                "endpoint": self.endpoint,
+                "source": "rattler-storage",
+                "method": auth.method(),
+            }),
+            None => serde_json::json!({
+                "endpoint": self.endpoint,
+                "source": null,
+                "method": null,
+            }),
+        };
+        Ok(status)
+    }
+
     pub async fn execute<ResponseData, Vars>(
         &self,
         operation: cynic::Operation<ResponseData, Vars>,
@@ -77,26 +124,26 @@ impl PrefixClient {
                 details: Some(serde_json::json!({ "body_preview": &text[..text.len().min(500)] })),
             })?;
 
-        if let Some(errors) = gql_resp.errors {
-            if !errors.is_empty() {
-                let message = errors
+        if let Some(errors) = gql_resp.errors
+            && !errors.is_empty()
+        {
+            let message = errors
+                .iter()
+                .map(|e| e.message.clone())
+                .collect::<Vec<_>>()
+                .join("; ");
+            let details: Option<serde_json::Value> = Some(serde_json::Value::Array(
+                errors
                     .iter()
-                    .map(|e| e.message.clone())
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                let details: Option<serde_json::Value> = Some(serde_json::Value::Array(
-                    errors
-                        .iter()
-                        .map(|e| {
-                            serde_json::json!({
-                                "message": e.message,
-                                "path": format!("{:?}", e.path),
-                            })
+                    .map(|e| {
+                        serde_json::json!({
+                            "message": e.message,
+                            "path": format!("{:?}", e.path),
                         })
-                        .collect(),
-                ));
-                return Err(PfxError::Graphql { message, details });
-            }
+                    })
+                    .collect(),
+            ));
+            return Err(PfxError::Graphql { message, details });
         }
 
         gql_resp.data.ok_or_else(|| PfxError::Graphql {

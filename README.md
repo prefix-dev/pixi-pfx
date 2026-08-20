@@ -52,7 +52,8 @@ pixi-pfx auth whoami
 pixi-pfx --token <TOKEN> auth whoami
 ```
 
-Read-only queries against public channels need no credentials at all.
+Read-only queries against public channels need no credentials at all. To inspect which credential
+source would be used without printing any secret, run `pixi-pfx auth status`.
 
 ## Output
 
@@ -152,7 +153,8 @@ pixi-pfx channel transfer my-channel new-owner
 ```
 
 The GitHub and GitLab publishers take an optional `--environment`; the Google publisher takes an
-optional `--sub` constraint. `channel get` lists the configured publishers with their ids.
+optional `--sub` constraint. All publisher commands accept `--access-mode` (`all`, `read`,
+`read-write`, or `read-write-delete`). `channel get` lists publishers, ids, and access modes.
 
 ### Notices
 
@@ -198,6 +200,11 @@ all take `--limit` / `--page`.
 pixi-pfx package yank my-channel linux-64 pkg-1.0.conda --reason "broken build"
 pixi-pfx package unyank my-channel linux-64 pkg-1.0.conda
 
+pixi-pfx package batch-yank my-channel --reason "broken builds" \
+  --entries '[{"subdir":"linux-64","filename":"pkg-1.0.conda"}]'
+pixi-pfx package batch-unyank my-channel \
+  --entries '[{"subdir":"linux-64","filename":"pkg-1.0.conda"}]'
+
 pixi-pfx package batch-delete my-channel \
   --entries '[{"subdir":"linux-64","filename":"pkg-1.0.conda"}]'
 ```
@@ -216,6 +223,10 @@ pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-from-channe
 
 pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-from-channel \
   destination-channel source-channel numpy --version 2.3.0 --platform linux-64
+
+# Resolve URLs and hashes without starting the job
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-from-channel \
+  destination-channel source-channel numpy --dry-run
 ```
 
 Packages can also be snatched from arbitrary URLs. Each entry pins a `url` together with its
@@ -223,11 +234,15 @@ expected `sha256`, so the copy either reproduces exactly that file or fails:
 
 ```bash
 pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy my-channel \
+  --package 'https://prefix.dev/conda-forge/linux-64/pkg-1.0.conda=<64-hex-sha256>' --wait
+
+# JSON input remains available for scripts
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy my-channel \
   --packages '[{"url":"https://prefix.dev/conda-forge/linux-64/pkg-1.0.conda","sha256":"<64-hex-sha256>"}]'
 
-# Follow a job by id, or ask what is currently running for a channel
-pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy-status <job-id>
-pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package active-copy my-channel
+# Follow a job by id, or inspect any active background job for a channel
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql job get <job-id> --wait
+pixi-pfx --endpoint https://beta.prefix.dev/api/graphql job active my-channel
 ```
 
 ## API keys
@@ -235,6 +250,7 @@ pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package active-copy my-c
 ```bash
 pixi-pfx auth api-key list
 pixi-pfx auth api-key create my-key --description "CI key" --expires-at 2026-12-31T00:00:00Z
+pixi-pfx auth api-key create upload-key --access-mode read-write --channel my-channel
 pixi-pfx auth api-key revoke my-key
 pixi-pfx auth api-key delete my-key
 ```
@@ -293,14 +309,15 @@ pixi run generate-docs
 
 ### Schema management
 
-`schema.graphql` is committed so builds work offline and in CI. Refresh it from the live API with:
+`schema.graphql` is committed so builds work offline and in CI. It tracks the beta API because
+beta-only operations (such as package copying) are compiled into this client. Refresh it with:
 
 ```bash
 pixi run sync-schema
 ```
 
-That fetches the schema by introspection. If something drifted in a breaking way, the next
-`cargo build` fails with errors pointing at the exact fields that changed.
+CI introspects beta and fails when the committed schema drifts. Cynic also reports compile-time
+errors when a used field changes.
 
 ### Project structure
 

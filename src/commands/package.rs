@@ -1,11 +1,41 @@
 use cynic::{MutationBuilder, QueryBuilder};
+use std::time::{Duration, Instant};
+
 use serde_json::Value;
 
-use crate::cli::{PackageCommand, PackageOrderField, SortDirection};
+use crate::cli::{
+    CopyWaitArgs, JobCommand, JobType, PackageCommand, PackageOrderField, SortDirection,
+};
 use crate::client::PrefixClient;
 use crate::error::PfxError;
 use crate::queries::common::*;
 use crate::queries::package::*;
+
+pub async fn handle_job(client: &PrefixClient, command: &JobCommand) -> Result<Value, PfxError> {
+    match command {
+        JobCommand::Get { id, wait } => {
+            let job = get_background_job(client, id).await?;
+            if wait.wait {
+                Ok(serde_json::to_value(
+                    wait_for_background_job(client, job, wait).await?,
+                )?)
+            } else {
+                Ok(serde_json::to_value(job)?)
+            }
+        }
+        JobCommand::Active { channel, job_type } => {
+            let op = ActiveCopyJobQuery::build(ActiveCopyJobVars {
+                channel_name: channel.clone(),
+                job_type: job_type.map(|job_type| match job_type {
+                    JobType::BatchDeletePackages => BackgroundJobType::BatchDeletePackages,
+                    JobType::CopyPackagesFromUrl => BackgroundJobType::CopyPackagesFromUrl,
+                }),
+            });
+            let data = client.execute(op).await?;
+            Ok(serde_json::to_value(data.active_background_job)?)
+        }
+    }
+}
 
 pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<Value, PfxError> {
     match command {
@@ -144,6 +174,7 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
                     filename: filename.clone(),
                 }],
                 reason: reason.clone(),
+                also_hide: None,
             });
             let data = client.execute(op).await?;
             Ok(serde_json::to_value(data.batch_yank_package_variants)?)
@@ -160,21 +191,64 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
                     subdir: subdir.clone(),
                     filename: filename.clone(),
                 }],
+                also_unhide: None,
             });
             let data = client.execute(op).await?;
             Ok(serde_json::to_value(data.batch_unyank_package_variants)?)
         }
 
-        PackageCommand::Copy { channel, packages } => {
-            let parsed: Vec<CopyPackageUrlInput> = serde_json::from_str(packages)
-                .map_err(|e| PfxError::InvalidArgument(format!("Invalid packages JSON: {e}")))?;
-            validate_copy_packages(&parsed)?;
-            let op = CopyPackagesMutation::build(CopyPackagesVars {
+        PackageCommand::BatchYank {
+            channel,
+            entries,
+            reason,
+            also_hide,
+        } => {
+            let entries = parse_variant_entries(entries)?;
+            let op = YankMutation::build(YankVars {
                 channel_name: channel.clone(),
-                packages: parsed,
+                entries,
+                reason: reason.clone(),
+                also_hide: Some(*also_hide),
             });
             let data = client.execute(op).await?;
-            Ok(serde_json::to_value(data.copy_packages_from_urls)?)
+            Ok(serde_json::to_value(data.batch_yank_package_variants)?)
+        }
+
+        PackageCommand::BatchUnyank {
+            channel,
+            entries,
+            also_unhide,
+        } => {
+            let entries = parse_variant_entries(entries)?;
+            let op = UnyankMutation::build(UnyankVars {
+                channel_name: channel.clone(),
+                entries,
+                also_unhide: Some(*also_unhide),
+            });
+            let data = client.execute(op).await?;
+            Ok(serde_json::to_value(data.batch_unyank_package_variants)?)
+        }
+
+        PackageCommand::Copy {
+            channel,
+            packages,
+            package,
+            execution,
+        } => {
+            let parsed = if let Some(packages) = packages {
+                serde_json::from_str(packages)
+                    .map_err(|e| PfxError::InvalidArgument(format!("Invalid packages JSON: {e}")))?
+            } else {
+                package
+                    .iter()
+                    .map(|value| parse_pinned_package(value))
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            validate_copy_packages(&parsed)?;
+            if execution.dry_run {
+                return Ok(serde_json::to_value(parsed)?);
+            }
+            execute_copy(client, channel, parsed, &execution.wait).await
         }
 
         PackageCommand::CopyFromChannel {
@@ -183,6 +257,7 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
             packages,
             version,
             platform,
+            execution,
         } => {
             let packages = resolve_channel_packages(
                 client,
@@ -192,18 +267,21 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
                 platform.as_ref(),
             )
             .await?;
-            let op = CopyPackagesMutation::build(CopyPackagesVars {
-                channel_name: destination.clone(),
-                packages,
-            });
-            let data = client.execute(op).await?;
-            Ok(serde_json::to_value(data.copy_packages_from_urls)?)
+            if execution.dry_run {
+                return Ok(serde_json::to_value(packages)?);
+            }
+            execute_copy(client, destination, packages, &execution.wait).await
         }
 
-        PackageCommand::CopyStatus { id } => {
-            let op = BackgroundJobQuery::build(BackgroundJobVars { id: id.clone() });
-            let data = client.execute(op).await?;
-            Ok(serde_json::to_value(data.background_job)?)
+        PackageCommand::CopyStatus { id, wait } => {
+            let job = get_background_job(client, id).await?;
+            if wait.wait {
+                Ok(serde_json::to_value(
+                    wait_for_background_job(client, job, wait).await?,
+                )?)
+            } else {
+                Ok(serde_json::to_value(job)?)
+            }
         }
 
         PackageCommand::ActiveCopy { channel } => {
@@ -216,8 +294,7 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
         }
 
         PackageCommand::BatchDelete { channel, entries } => {
-            let parsed: Vec<PackageVariantInput> = serde_json::from_str(entries)
-                .map_err(|e| PfxError::InvalidArgument(format!("Invalid entries JSON: {e}")))?;
+            let parsed = parse_variant_entries(entries)?;
             let op = BatchDeleteMutation::build(BatchDeleteVars {
                 channel_name: channel.clone(),
                 entries: parsed,
@@ -225,6 +302,98 @@ pub async fn handle(client: &PrefixClient, command: &PackageCommand) -> Result<V
             let data = client.execute(op).await?;
             Ok(serde_json::to_value(data.batch_delete_package_variants)?)
         }
+    }
+}
+
+fn parse_variant_entries(value: &str) -> Result<Vec<PackageVariantInput>, PfxError> {
+    let entries: Vec<PackageVariantInput> = serde_json::from_str(value)
+        .map_err(|e| PfxError::InvalidArgument(format!("Invalid entries JSON: {e}")))?;
+    if entries.is_empty() {
+        return Err(PfxError::InvalidArgument(
+            "entries must contain at least one item".to_string(),
+        ));
+    }
+    Ok(entries)
+}
+
+fn parse_pinned_package(value: &str) -> Result<CopyPackageUrlInput, PfxError> {
+    let (url, sha256) = value.rsplit_once('=').ok_or_else(|| {
+        PfxError::InvalidArgument(format!(
+            "invalid pinned package '{value}'; expected URL=SHA256"
+        ))
+    })?;
+    Ok(CopyPackageUrlInput {
+        url: url.to_string(),
+        sha256: sha256.to_string(),
+    })
+}
+
+async fn execute_copy(
+    client: &PrefixClient,
+    destination: &str,
+    packages: Vec<CopyPackageUrlInput>,
+    wait: &CopyWaitArgs,
+) -> Result<Value, PfxError> {
+    let op = CopyPackagesMutation::build(CopyPackagesVars {
+        channel_name: destination.to_string(),
+        packages,
+    });
+    let data = client.execute(op).await?;
+    let job = data.copy_packages_from_urls;
+    if wait.wait {
+        Ok(serde_json::to_value(
+            wait_for_background_job(client, job, wait).await?,
+        )?)
+    } else {
+        Ok(serde_json::to_value(job)?)
+    }
+}
+
+async fn get_background_job(client: &PrefixClient, id: &str) -> Result<BackgroundJob, PfxError> {
+    let op = BackgroundJobQuery::build(BackgroundJobVars { id: id.to_string() });
+    let data = client.execute(op).await?;
+    data.background_job
+        .ok_or_else(|| PfxError::InvalidArgument(format!("background job '{id}' was not found")))
+}
+
+async fn wait_for_background_job(
+    client: &PrefixClient,
+    mut job: BackgroundJob,
+    options: &CopyWaitArgs,
+) -> Result<BackgroundJob, PfxError> {
+    if options.poll_interval == 0 || options.timeout == 0 {
+        return Err(PfxError::InvalidArgument(
+            "poll interval and timeout must be greater than zero".to_string(),
+        ));
+    }
+    let started = Instant::now();
+    loop {
+        match job.status {
+            BackgroundJobStatus::Completed => return Ok(job),
+            BackgroundJobStatus::CompletedWithErrors | BackgroundJobStatus::Failed => {
+                let details = serde_json::to_value(&job).ok();
+                return Err(PfxError::BackgroundJob {
+                    message: job
+                        .error_message
+                        .clone()
+                        .unwrap_or_else(|| format!("job '{}' finished with errors", job.id)),
+                    details,
+                });
+            }
+            BackgroundJobStatus::Pending | BackgroundJobStatus::InProgress => {}
+        }
+
+        if started.elapsed() >= Duration::from_secs(options.timeout) {
+            return Err(PfxError::BackgroundJob {
+                message: format!(
+                    "timed out after {} seconds waiting for job '{}'",
+                    options.timeout, job.id
+                ),
+                details: serde_json::to_value(&job).ok(),
+            });
+        }
+        tokio::time::sleep(Duration::from_secs(options.poll_interval)).await;
+        job = get_background_job(client, &job.id).await?;
     }
 }
 
@@ -350,5 +519,22 @@ mod tests {
             sha256: "a".repeat(64),
         }];
         assert!(validate_copy_packages(&invalid_scheme).is_err());
+    }
+
+    #[test]
+    fn parses_repeated_pinned_package_syntax() {
+        let pin = format!(
+            "https://example.com/pkg.conda?download=1={}",
+            "a".repeat(64)
+        );
+        let parsed = parse_pinned_package(&pin).unwrap();
+        assert_eq!(parsed.url, "https://example.com/pkg.conda?download=1");
+        assert_eq!(parsed.sha256, "a".repeat(64));
+        assert!(parse_pinned_package("https://example.com/pkg.conda").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_variant_entry_lists() {
+        assert!(parse_variant_entries("[]").is_err());
     }
 }

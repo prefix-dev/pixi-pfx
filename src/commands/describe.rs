@@ -1,5 +1,5 @@
 use clap::Command;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn describe_commands(root: &Command, path: &[String]) -> Value {
     if path.is_empty() {

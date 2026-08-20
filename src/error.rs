@@ -21,6 +21,12 @@ pub enum PfxError {
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
 
+    #[error("Background job failed: {message}")]
+    BackgroundJob {
+        message: String,
+        details: Option<serde_json::Value>,
+    },
+
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }
@@ -33,6 +39,7 @@ impl PfxError {
             PfxError::AuthRequired => "AUTH_REQUIRED",
             PfxError::AuthStorage(_) => "AUTH_STORAGE_ERROR",
             PfxError::InvalidArgument(_) => "INVALID_ARGUMENT",
+            PfxError::BackgroundJob { .. } => "BACKGROUND_JOB_FAILED",
             PfxError::Json(_) => "JSON_ERROR",
         }
     }
@@ -49,7 +56,9 @@ pub struct ErrorResponse {
 impl From<&PfxError> for ErrorResponse {
     fn from(err: &PfxError) -> Self {
         let details = match err {
-            PfxError::Graphql { details, .. } => details.clone(),
+            PfxError::Graphql { details, .. } | PfxError::BackgroundJob { details, .. } => {
+                details.clone()
+            }
             _ => None,
         };
         ErrorResponse {

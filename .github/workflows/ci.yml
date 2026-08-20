@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Check synchronized versions
+        run: python3 scripts/check-versions.py
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Run tests
+        run: cargo test
+
+  check-platform:
+    name: Check ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-64
+            runner: ubuntu-latest
+          - platform: osx-64
+            runner: macos-14
+          - platform: osx-arm64
+            runner: macos-14
+          - platform: win-64
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1
+        with:
+          pixi-version: latest
+          cache: true
+      - name: Validate package build
+        run: pixi publish --path . --target-platform ${{ matrix.platform }} --target-dir dist
+
+  schema-drift:
+    name: Beta schema drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cynic CLI
+        run: cargo install cynic-cli --locked
+      - name: Introspect beta schema
+        run: cynic introspect https://beta.prefix.dev/api/graphql -o /tmp/schema.graphql
+      - name: Check committed schema
+        run: diff --unified schema.graphql /tmp/schema.graphql

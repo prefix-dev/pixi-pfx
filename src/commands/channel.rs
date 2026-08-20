@@ -1,7 +1,9 @@
 use cynic::{MutationBuilder, QueryBuilder};
 use serde_json::Value;
 
-use crate::cli::{ChannelCommand, ChannelOrderField, MemberRole, NoticeLevel, SortDirection};
+use crate::cli::{
+    AccessMode, ChannelCommand, ChannelOrderField, MemberRole, NoticeLevel, SortDirection,
+};
 use crate::client::PrefixClient;
 use crate::error::PfxError;
 use crate::queries::channel::*;
@@ -218,6 +220,7 @@ pub async fn handle(client: &PrefixClient, command: &ChannelCommand) -> Result<V
             repo,
             workflow,
             environment,
+            access_mode,
         } => {
             let op = AddGithubOidcMutation::build(AddGithubOidcVars {
                 channel_name: channel.clone(),
@@ -225,6 +228,7 @@ pub async fn handle(client: &PrefixClient, command: &ChannelCommand) -> Result<V
                 repository_name: repo.clone(),
                 workflow_filename: workflow.clone(),
                 environment: environment.clone(),
+                access_mode: access_mode.map(channel_access_mode),
             });
             let data = client.execute(op).await?;
             Ok(serde_json::to_value(data.add_github_oidc_publisher)?)
@@ -236,6 +240,7 @@ pub async fn handle(client: &PrefixClient, command: &ChannelCommand) -> Result<V
             project,
             workflow,
             environment,
+            access_mode,
         } => {
             let op = AddGitlabOidcMutation::build(AddGitlabOidcVars {
                 channel_name: channel.clone(),
@@ -243,6 +248,7 @@ pub async fn handle(client: &PrefixClient, command: &ChannelCommand) -> Result<V
                 project: project.clone(),
                 workflow_filepath: workflow.clone(),
                 environment: environment.clone(),
+                access_mode: access_mode.map(channel_access_mode),
             });
             let data = client.execute(op).await?;
             Ok(serde_json::to_value(data.add_gitlab_oidc_publisher)?)
@@ -252,11 +258,13 @@ pub async fn handle(client: &PrefixClient, command: &ChannelCommand) -> Result<V
             channel,
             email,
             sub,
+            access_mode,
         } => {
             let op = AddGoogleOidcMutation::build(AddGoogleOidcVars {
                 channel_name: channel.clone(),
                 email: email.clone(),
                 sub: sub.clone(),
+                access_mode: access_mode.map(channel_access_mode),
             });
             let data = client.execute(op).await?;
             Ok(serde_json::to_value(data.add_google_oidc_publisher)?)
@@ -281,6 +289,15 @@ pub async fn handle(client: &PrefixClient, command: &ChannelCommand) -> Result<V
                 data.transfer_channel_ownership.channel,
             )?)
         }
+    }
+}
+
+fn channel_access_mode(mode: AccessMode) -> ChannelAccessMode {
+    match mode {
+        AccessMode::All => ChannelAccessMode::All,
+        AccessMode::Read => ChannelAccessMode::Read,
+        AccessMode::ReadWrite => ChannelAccessMode::ReadWrite,
+        AccessMode::ReadWriteDelete => ChannelAccessMode::ReadWriteDelete,
     }
 }
 

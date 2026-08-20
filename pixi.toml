@@ -6,7 +6,7 @@ preview = ["pixi-build"]
 
 [package]
 name = "pixi-pfx"
-version = "0.2.0"
+version = "0.3.0"
 
 [package.build]
 backend = { name = "pixi-build-rust", version = "*" }
@@ -22,7 +22,7 @@ pixi-pfx = { path = "." }
 
 [tasks]
 # Fetch latest schema from live API via introspection (requires network)
-sync-schema = "cargo install cynic-cli && cynic introspect https://prefix.dev/api/graphql -o schema.graphql"
+sync-schema = "cargo install cynic-cli && cynic introspect https://beta.prefix.dev/api/graphql -o schema.graphql"
 
 # Build & test via cargo (dev workflow)
 build = "cargo build --release"

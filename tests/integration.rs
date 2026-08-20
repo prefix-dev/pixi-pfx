@@ -83,13 +83,7 @@ mod online {
 
     #[test]
     fn test_package_matchspec() {
-        let result = parse_output(&[
-            "package",
-            "matchspec",
-            "numpy",
-            "--channel",
-            "conda-forge",
-        ]);
+        let result = parse_output(&["package", "matchspec", "numpy", "--channel", "conda-forge"]);
         assert_eq!(result["ok"], true);
         assert_eq!(result["data"]["name"], "numpy");
     }
@@ -120,14 +114,7 @@ mod online {
 
     #[test]
     fn test_channel_list_with_search() {
-        let result = parse_output(&[
-            "channel",
-            "list",
-            "--search",
-            "conda",
-            "--limit",
-            "5",
-        ]);
+        let result = parse_output(&["channel", "list", "--search", "conda", "--limit", "5"]);
         assert_eq!(result["ok"], true);
         let page = &result["data"]["page"];
         assert!(page.is_array());

@@ -39,6 +39,15 @@ pub enum ChannelMemberRole {
 
 #[derive(cynic::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 #[cynic(schema_path = "schema.graphql", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ChannelAccessMode {
+    All,
+    Read,
+    ReadWrite,
+    ReadWriteDelete,
+}
+
+#[derive(cynic::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+#[cynic(schema_path = "schema.graphql", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ChannelOrderByFieldField {
     Name,
     BillingOwner,
