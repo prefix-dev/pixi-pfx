@@ -367,7 +367,14 @@ async fn wait_for_background_job(
         ));
     }
     let started = Instant::now();
+    let mut last_progress = None;
     loop {
+        let progress = (job.status, job.processed_count, job.failed_count);
+        if last_progress != Some(progress) {
+            eprintln!("{}", background_job_progress(&job));
+            last_progress = Some(progress);
+        }
+
         match job.status {
             BackgroundJobStatus::Completed => return Ok(job),
             BackgroundJobStatus::CompletedWithErrors | BackgroundJobStatus::Failed => {
@@ -395,6 +402,20 @@ async fn wait_for_background_job(
         tokio::time::sleep(Duration::from_secs(options.poll_interval)).await;
         job = get_background_job(client, &job.id).await?;
     }
+}
+
+fn background_job_progress(job: &BackgroundJob) -> String {
+    let status = match job.status {
+        BackgroundJobStatus::Pending => "pending",
+        BackgroundJobStatus::InProgress => "in progress",
+        BackgroundJobStatus::Completed => "completed",
+        BackgroundJobStatus::CompletedWithErrors => "completed with errors",
+        BackgroundJobStatus::Failed => "failed",
+    };
+    format!(
+        "Job {}: {} ({}/{} processed, {} failed)",
+        job.id, status, job.processed_count, job.total_count, job.failed_count
+    )
 }
 
 async fn resolve_channel_packages(
@@ -536,5 +557,26 @@ mod tests {
     #[test]
     fn rejects_empty_variant_entry_lists() {
         assert!(parse_variant_entries("[]").is_err());
+    }
+
+    #[test]
+    fn formats_background_job_progress() {
+        let job = BackgroundJob {
+            id: "job-42".to_string(),
+            job_type: crate::queries::package::BackgroundJobType::CopyPackagesFromUrl,
+            status: BackgroundJobStatus::InProgress,
+            payload: crate::queries::common::Json(serde_json::json!({})),
+            total_count: 10,
+            processed_count: 7,
+            failed_count: 1,
+            error_message: None,
+            results: None,
+            created_at: crate::queries::common::DateTime("2026-08-20T12:00:00Z".to_string()),
+            completed_at: None,
+        };
+        assert_eq!(
+            background_job_progress(&job),
+            "Job job-42: in progress (7/10 processed, 1 failed)"
+        );
     }
 }

@@ -241,6 +241,7 @@ pixi-pfx --endpoint https://beta.prefix.dev/api/graphql package copy my-channel 
   --packages '[{"url":"https://prefix.dev/conda-forge/linux-64/pkg-1.0.conda","sha256":"<64-hex-sha256>"}]'
 
 # Follow a job by id, or inspect any active background job for a channel
+# --wait reports changed status/counts on stderr and prints final per-item results.
 pixi-pfx --endpoint https://beta.prefix.dev/api/graphql job get <job-id> --wait
 pixi-pfx --endpoint https://beta.prefix.dev/api/graphql job active my-channel
 ```
