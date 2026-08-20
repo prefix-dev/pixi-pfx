@@ -33,6 +33,8 @@ jobs:
         run: cargo test
 
   check-platform:
+    # Main is already built by the publish workflow when a version changes.
+    if: github.event_name == 'pull_request'
     name: Check ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     strategy:
