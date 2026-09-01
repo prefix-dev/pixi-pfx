@@ -1006,7 +1006,6 @@ enum LimitEntityType {
   CHANNELS
   MEMBERS
   PACKAGE_SIZE
-  BILLED_GROUPS
   GROUP_MEMBERS
 }
 
@@ -1755,7 +1754,11 @@ type PendingPlanChangeDetails {
   token: String!
   changeType: PlanChangeTypeEnum!
   status: PlanChangeStatusType!
-  currentPlanId: Int!
+  """
+  Null when the account held no subscription when the link was created,
+  which is where a group that has never been billed starts.
+  """
+  currentPlanId: Int
   targetPlanId: Int!
   targetBillingPeriod: String!
   expiresAt: DateTime!
@@ -2302,8 +2305,10 @@ type Query {
   """
   myPendingPlanChange: PendingPlanChangeDetails
   """
-  Get details of a pending plan change by token (for the confirmation page).
-  Requires authentication — the user must own the plan change.
+  Get details of a pending plan change by token (for the confirmation
+  page). Requires authentication — the caller must hold the billing
+  account the change targets, or manage the billing of the group that
+  does.
   """
   pendingPlanChange(token: String!): PendingPlanChangeDetails
   """
