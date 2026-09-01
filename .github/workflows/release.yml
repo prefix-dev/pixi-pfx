@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Validate the release without tagging"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate and extract version
+        id: version
+        shell: bash
+        run: |
+          version=$(python3 scripts/check-versions.py)
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Create release
+    needs: prepare
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create and push tag
+        shell: bash
+        run: |
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            test "$(git rev-list -n 1 "$TAG")" = "$GITHUB_SHA"
+          else
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "$TAG"
+          fi
+      - name: Create GitHub release
+        run: gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
