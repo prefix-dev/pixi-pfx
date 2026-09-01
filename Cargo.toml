@@ -2,6 +2,9 @@
 name = "pixi-pfx"
 version = "0.3.1"
 edition = "2024"
+authors = ["pixi-pfx contributors <hi@prefix.dev>"]
+license = "BSD-3-Clause"
+repository = "https://github.com/prefix-dev/pixi-pfx"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }
