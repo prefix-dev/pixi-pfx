@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 #[derive(Parser)]
 #[command(name = "pixi-pfx", about = "prefix.dev GraphQL API client for pixi")]
 pub struct Cli {
-    /// API authentication token (or set PREFIX_DEV_API_TOKEN env var)
+    /// API authentication token (or set PREFIX_DEV_API_TOKEN or PREFIX_DEV_API_KEY env var)
     #[arg(long, global = true, env = "PREFIX_DEV_API_TOKEN")]
     pub token: Option<String>,
 
@@ -17,6 +17,26 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Command,
+}
+
+/// Fallback env var for the API token, read when neither `--token` nor
+/// `PREFIX_DEV_API_TOKEN` is set.
+pub const API_KEY_ENV: &str = "PREFIX_DEV_API_KEY";
+
+impl Cli {
+    /// The API token to authenticate with: `--token`, then `PREFIX_DEV_API_TOKEN`,
+    /// then `PREFIX_DEV_API_KEY`.
+    pub fn api_token(&self) -> Option<String> {
+        resolve_api_token(self.token.clone(), |name| std::env::var(name).ok())
+    }
+}
+
+fn resolve_api_token(
+    token: Option<String>,
+    env: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    // Like clap's `env`, treat an empty value as unset.
+    token.or_else(|| env(API_KEY_ENV).filter(|value| !value.is_empty()))
 }
 
 #[derive(Subcommand)]
@@ -569,6 +589,26 @@ pub enum AccessMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn api_token_prefers_explicit_token() {
+        let token = resolve_api_token(Some("explicit".into()), |_| Some("from-env".into()));
+        assert_eq!(token.as_deref(), Some("explicit"));
+    }
+
+    #[test]
+    fn api_token_falls_back_to_api_key_env() {
+        let token = resolve_api_token(None, |name| {
+            (name == API_KEY_ENV).then(|| "pfx-key".to_string())
+        });
+        assert_eq!(token.as_deref(), Some("pfx-key"));
+    }
+
+    #[test]
+    fn api_token_ignores_empty_api_key_env() {
+        let token = resolve_api_token(None, |_| Some(String::new()));
+        assert_eq!(token, None);
+    }
 
     #[test]
     fn parses_add_notice() {

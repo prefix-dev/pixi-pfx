@@ -42,10 +42,11 @@ Logged in as: wolfv
 ```
 
 To act with a specific API key instead — in CI, for example — pass `--token` or set
-`PREFIX_DEV_API_TOKEN`. An explicit token always takes precedence over stored credentials:
+`PREFIX_DEV_API_TOKEN` (`PREFIX_DEV_API_KEY` works too). An explicit token always takes precedence
+over stored credentials:
 
 ```bash
-export PREFIX_DEV_API_TOKEN=<TOKEN>
+export PREFIX_DEV_API_KEY=<TOKEN>
 pixi-pfx auth whoami
 
 # equivalent
@@ -98,7 +99,7 @@ commands exit `0`, failures exit `1`; in table mode the error goes to stderr as
 | Option | Default | Description |
 | --- | --- | --- |
 | `--json` | off | Emit the JSON envelope instead of tables. |
-| `--token <TOKEN>` | rattler auth storage | API token to authenticate with; also read from `PREFIX_DEV_API_TOKEN`. |
+| `--token <TOKEN>` | rattler auth storage | API token to authenticate with; also read from `PREFIX_DEV_API_TOKEN` or `PREFIX_DEV_API_KEY`. |
 | `--endpoint <URL>` | `https://prefix.dev/api/graphql` | GraphQL endpoint. Point it at `https://beta.prefix.dev/api/graphql` to work against beta. |
 
 All three are global and may appear anywhere on the command line.

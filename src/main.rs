@@ -51,13 +51,13 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
         }
 
         Command::Job { command } => {
-            let client = PrefixClient::new(cli.endpoint.clone(), cli.token.clone());
+            let client = PrefixClient::new(cli.endpoint.clone(), cli.api_token());
             let val = commands::package::handle_job(&client, command).await?;
             Ok(CommandOutput::new(val, OutputKind::BackgroundJob))
         }
 
         Command::Auth { command } => {
-            let client = PrefixClient::new(cli.endpoint.clone(), cli.token.clone());
+            let client = PrefixClient::new(cli.endpoint.clone(), cli.api_token());
             match command {
                 AuthCommand::Status => {
                     let val = client.authentication_status().await?;
@@ -85,7 +85,7 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
         }
 
         Command::Channel { command } => {
-            let client = PrefixClient::new(cli.endpoint.clone(), cli.token.clone());
+            let client = PrefixClient::new(cli.endpoint.clone(), cli.api_token());
             let val = commands::channel::handle(&client, command).await?;
             let kind = match command {
                 ChannelCommand::Get { .. } => OutputKind::ChannelDetail,
@@ -117,7 +117,7 @@ async fn run(cli: &Cli) -> Result<CommandOutput, PfxError> {
         }
 
         Command::Package { command } => {
-            let client = PrefixClient::new(cli.endpoint.clone(), cli.token.clone());
+            let client = PrefixClient::new(cli.endpoint.clone(), cli.api_token());
             let val = commands::package::handle(&client, command).await?;
             let kind = match command {
                 PackageCommand::Get { .. } => OutputKind::PackageDetail,
